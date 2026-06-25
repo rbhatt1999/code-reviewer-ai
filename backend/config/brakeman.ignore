@@ -1,0 +1,22 @@
+{
+  "ignored_warnings": [
+    {
+      "warning_type": "Command Injection",
+      "warning_code": 14,
+      "fingerprint": "f6c40fd5e90ecb5fccc17b460b87385b8e7d077f637397541f0a1d2b4dad41b5",
+      "check_name": "Execute",
+      "message": "Possible command injection",
+      "file": "app/services/ingestion/git_cloner.rb",
+      "line": 91,
+      "link": "https://brakemanscanner.org/docs/warning_types/command_injection/",
+      "code": null,
+      "render_path": null,
+      "location": null,
+      "user_input": null,
+      "confidence": "Medium",
+      "note": "False positive: Open3.capture3 with an array never shell-expands. The pr_number variable is integer-cast in GithubController before being written to the meta file, and .to_s.strip on an integer string yields only digits. No shell injection is possible."
+    }
+  ],
+  "updated": "2026-05-30",
+  "brakeman_version": "6.2.2"
+}
