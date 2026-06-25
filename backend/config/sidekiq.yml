@@ -1,0 +1,17 @@
+# Sidekiq queue configuration for the 4-job review pipeline.
+#
+# Queues and weights:
+#   - default  (5) — IngestJob, AggregateReportJob, and any ad-hoc work
+#   - analysis (3) — StaticAnalysisJob (multi-language linter fan-out)
+#   - llm      (1) — LLMReviewJob (Ollama inference, Increment 3)
+#
+# Increment 2 note: LLMReviewJob is a stub (no Ollama) so a single Sidekiq
+# process draining all three queues is fine. In Increment 3, real Ollama
+# inference cannot be parallelised on a single CPU/GPU; run a dedicated
+# worker process scoped to `--queue llm --concurrency 1` at that point.
+
+:concurrency: 5
+:queues:
+  - [default,  5]
+  - [analysis, 3]
+  - [llm,      1]

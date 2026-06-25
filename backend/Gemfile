@@ -1,0 +1,61 @@
+source 'https://rubygems.org'
+ruby '3.2.5'
+
+gem 'rails', '~> 7.1.5'
+gem 'pg', '~> 1.5'
+gem 'puma', '~> 6.4'
+gem 'bootsnap', '~> 1.18', require: false
+
+# Auth
+gem 'devise', '~> 4.9'
+gem 'devise-jwt', '~> 0.11'
+gem 'bcrypt', '~> 3.1'
+
+# Background jobs
+gem 'sidekiq', '~> 7.2'
+gem 'redis', '~> 5.0'
+gem 'aasm', '~> 5.5'
+# Sidekiq 7.3 calls connection_pool#pop with a positional arg, which
+# connection_pool 3.0 removed. Pin to the 2.x line until Sidekiq 8.x.
+gem 'connection_pool', '~> 2.4'
+
+# HTTP + JSON
+gem 'faraday', '~> 2.9'
+gem 'faraday-retry', '~> 2.2'
+gem 'rubyzip', '~> 2.3'
+gem 'oj', '~> 3.16'
+gem 'rack-cors', '~> 2.0'
+gem 'rack-attack', '~> 6.7'
+
+# Reports
+gem 'redcarpet', '~> 3.6'
+gem 'prawn', '~> 2.5'
+gem 'prawn-table', '~> 0.2.2'
+gem 'grover', '~> 1.1'   # HTML→PDF via headless Chromium (Increment 4 report export)
+
+# Observability
+gem 'lograge', '~> 0.14'
+
+# Static-analysis tools invoked by the worker (runtime deps, not just dev)
+gem 'rubocop', '~> 1.65', require: false
+gem 'brakeman', '~> 6.2', require: false
+
+gem 'tzinfo-data', platforms: %i[windows jruby]
+
+group :development, :test do
+  gem 'rspec-rails', '~> 6.1'
+  gem 'factory_bot_rails', '~> 6.4'
+  gem 'faker', '~> 3.4'
+  gem 'shoulda-matchers', '~> 6.2'
+  gem 'database_cleaner-active_record', '~> 2.1'
+  gem 'webmock', '~> 3.23'
+  gem 'vcr', '~> 6.2'
+  gem 'pry-byebug', '~> 3.10'
+  gem 'dotenv-rails', '~> 3.1'
+  gem 'rubocop-rails', '~> 2.25', require: false
+  gem 'rubocop-rspec', '~> 3.0', require: false
+end
+
+group :development do
+  gem 'listen', '~> 3.9'
+end

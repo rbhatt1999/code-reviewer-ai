@@ -1,0 +1,37 @@
+name: code-reviewer-ai
+
+# Increment 1 brings up the data stores only; the Rails API and the React SPA
+# run locally during development. Application, worker, and Ollama services are
+# added in later increments.
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: cra
+      POSTGRES_PASSWORD: cra
+      POSTGRES_DB: code_reviewer_ai_development
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cra"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  pg_data:
+  redis_data:

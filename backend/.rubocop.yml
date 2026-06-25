@@ -1,0 +1,91 @@
+plugins:
+  - rubocop-rails
+  - rubocop-rspec
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - 'db/schema.rb'
+    - 'db/migrate/**/*'
+    - 'bin/**/*'
+    - 'node_modules/**/*'
+    - 'vendor/**/*'
+    - 'tmp/**/*'
+    - 'storage/**/*'
+
+Style/Documentation:
+  Enabled: false
+
+Style/FrozenStringLiteralComment:
+  Enabled: false
+
+Bundler/OrderedGems:
+  Enabled: false
+
+Metrics/MethodLength:
+  Max: 35
+
+Metrics/ClassLength:
+  Max: 200
+
+Metrics/AbcSize:
+  Max: 30
+
+Metrics/BlockLength:
+  Exclude:
+    - 'spec/**/*'
+    - 'config/routes.rb'
+    - 'config/initializers/devise.rb'
+
+Layout/LineLength:
+  Max: 120
+  AllowedPatterns:
+    - '^\s*#'
+
+Rails/ActionOrder:
+  Enabled: false
+
+Rails/HttpStatusNameConsistency:
+  Enabled: false
+
+Rails/Output:
+  Exclude:
+    - 'db/seeds.rb'
+
+Rails/ResponseParsedBody:
+  Enabled: false
+
+RSpec/MultipleExpectations:
+  Enabled: false
+
+RSpec/ExampleLength:
+  Max: 30
+
+RSpec/NestedGroups:
+  Max: 5
+
+RSpec/ContextWording:
+  Enabled: false
+
+RSpec/MultipleMemoizedHelpers:
+  Enabled: false
+
+RSpec/LetSetup:
+  Enabled: false
+
+RSpec/ImplicitSubject:
+  Enabled: false
+
+RSpec/EmptyLineAfterExample:
+  Enabled: false
+
+Lint/UnusedMethodArgument:
+  Enabled: false
+
+Lint/MissingSuper:
+  Enabled: false
+
+Lint/DuplicateBranch:
+  Enabled: false

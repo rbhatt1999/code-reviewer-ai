@@ -1,0 +1,23 @@
+# PostgreSQL configuration for CodeReviewer.AI.
+# Local development connects to the Dockerised Postgres (docker compose up postgres).
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  host: <%= ENV.fetch("DATABASE_HOST", "localhost") %>
+  port: <%= ENV.fetch("DATABASE_PORT", 5432) %>
+  username: <%= ENV.fetch("DATABASE_USER", "cra") %>
+  password: <%= ENV.fetch("DATABASE_PASSWORD", "cra") %>
+
+development:
+  <<: *default
+  database: <%= ENV.fetch("DATABASE_NAME", "code_reviewer_ai_development") %>
+
+test:
+  <<: *default
+  database: <%= ENV.fetch("DATABASE_NAME_TEST", "code_reviewer_ai_test") %>
+
+production:
+  <<: *default
+  database: <%= ENV.fetch("DATABASE_NAME", "code_reviewer_ai_production") %>
+  url: <%= ENV["DATABASE_URL"] %>

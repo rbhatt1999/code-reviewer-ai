@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Runs the full Increment 1 test suite — backend (RSpec) and frontend (Jest).
+# Requires: Ruby 3.2.5 + bundled gems, Node 20 active (see .nvmrc), Postgres reachable.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+echo "== backend (RSpec) =="
+( cd backend && bundle exec rspec )
+
+echo
+echo "== frontend (Jest) =="
+( cd frontend && npm test )
+
+echo
+echo "CI passed."

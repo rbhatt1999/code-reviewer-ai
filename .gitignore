@@ -1,0 +1,38 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Environment
+.env
+.env.local
+*.local
+
+# Backend (Rails)
+# Rails master key — secret, never commit (credentials.yml.enc is encrypted and safe)
+backend/config/master.key
+backend/.bundle/
+backend/log/*
+backend/tmp/*
+!backend/tmp/.keep
+backend/storage/*
+!backend/storage/.keep
+backend/coverage/
+backend/.byebug_history
+backend/spec/examples.txt
+backend/public/uploads/
+
+# Submitted code blobs (raw uploads — never committed)
+backend/storage/submissions/
+
+# Frontend (React / Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
+frontend/cypress/videos/
+frontend/cypress/screenshots/
+
+# Evaluation output
+tmp/evaluation/
