@@ -83,6 +83,36 @@ Free-tier ngrok URLs change every time you restart the tunnel, so re-check
 http://localhost:4040 and update the GitHub webhook's Payload URL if you
 stop and restart between demo runs.
 
+#### If the `ngrok` container won't start (Docker networking errors)
+
+If `docker compose --profile demo up` fails with something like
+`failed to set up container networking: network ... not found`, that's a
+Docker Desktop bug, not a problem with this project — its internal VM
+network state has gotten wedged, and `docker compose down` / `docker
+network prune` / even quitting and reopening Docker Desktop don't always
+clear it (only a full "Troubleshoot → Clean / Purge data" reset, or a host
+reboot, reliably does — and Purge wipes containers/images, so back up the
+`pg_data` volume first if you care about existing submissions).
+
+The fastest way around it for a demo: skip the `ngrok` **container**
+entirely and run the ngrok **CLI** natively on your machine instead. It
+only needs to reach `localhost:3000`, which the backend already publishes
+there regardless of the `demo` profile:
+
+```bash
+# 1. Start the stack WITHOUT the demo profile — no ngrok container involved
+docker compose up --build
+
+# 2. In a separate terminal, install ngrok natively (macOS: brew, or download
+#    from https://ngrok.com/download) and point it at the published port
+brew install ngrok/ngrok/ngrok
+ngrok config add-authtoken <your token>     # same token as NGROK_AUTHTOKEN
+ngrok http 3000
+```
+
+Use the `https://...ngrok-free.app` URL ngrok prints the same way as
+above — paste it into the webhook panel's payload URL field.
+
 ### Manual (non-Docker) setup
 
 Useful for active backend/frontend development with faster reload:
