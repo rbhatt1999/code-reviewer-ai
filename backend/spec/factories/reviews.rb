@@ -7,5 +7,6 @@ FactoryBot.define do
     total_issues { 0 }
     llm_attempts { 0 }
     llm_duration_ms { nil }
+    review_log { [] }
   end
 end

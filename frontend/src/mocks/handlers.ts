@@ -79,6 +79,11 @@ const mockReview = {
   summary: 'Found 2 style issues in app.rb',
   scores: null,
   total_issues: 2,
+  review_log: [
+    { type: 'diff', file: 'app.rb', status: 'modified', additions: 4, deletions: 1 },
+    { type: 'read_file', file: 'app/models/user.rb', bytes: 512 },
+    { type: 'final_answer', issues_found: 2 },
+  ],
 };
 
 export const handlers = [

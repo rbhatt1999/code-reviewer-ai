@@ -1,11 +1,73 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getSubmission, getIssues, getReview, getSubmissionFiles, getFileContent } from '@api/submissions';
-import type { Issue } from '@api/schemas';
+import type { Issue, Review, ReviewLogEntry, SourceFile } from '@api/schemas';
 import { useSubmissionChannel } from '@hooks/useSubmissionChannel';
 import { CodeViewer } from './CodeViewer';
 import { ReportDownloadButtons } from './ReportDownloadButtons';
+
+// Paths the AI actually looked at: files that seeded the diff-first prompt,
+// plus any it explicitly asked to read via the read_file tool. Deliberately
+// excludes read_file_error entries — the model asked, but never got content
+// back, so there's nothing to show in the code viewer for that path.
+function reviewedPaths(review: Review | undefined): Set<string> {
+  const paths = new Set<string>();
+  for (const entry of review?.review_log ?? []) {
+    if ((entry.type === 'diff' || entry.type === 'read_file') && entry.file) {
+      paths.add(entry.file);
+    }
+  }
+  return paths;
+}
+
+function describeLogEntry(entry: ReviewLogEntry, index: number): string {
+  switch (entry.type) {
+    case 'diff':
+      return `Changed in PR: ${entry.file} (${entry.status ?? 'modified'}, +${entry.additions ?? 0}/-${entry.deletions ?? 0})`;
+    case 'read_file':
+      return `Read for context: ${entry.file}`;
+    case 'read_file_error':
+      return `Asked for ${entry.file} — ${entry.error ?? 'error'}`;
+    case 'final_answer':
+      return `Finished — ${entry.issues_found ?? 0} issue(s) reported`;
+    case 'degraded':
+      return `Degraded — ${entry.reason ?? 'unknown reason'}`;
+    default:
+      return `Step ${index + 1}: ${entry.type}`;
+  }
+}
+
+const LOG_ENTRY_STYLES: Record<string, string> = {
+  diff: 'text-blue-700 bg-blue-50',
+  read_file: 'text-gray-700 bg-gray-100',
+  read_file_error: 'text-yellow-700 bg-yellow-50',
+  final_answer: 'text-green-700 bg-green-50',
+  degraded: 'text-red-700 bg-red-50',
+};
+
+function ReviewProcess({ review }: { review: Review }) {
+  const log = review.review_log;
+  if (!log || log.length === 0) return null;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-5 mb-6" data-testid="review-process">
+      <h2 className="text-base font-semibold text-gray-700 mb-3">Review process</h2>
+      <ol className="space-y-1.5">
+        {log.map((entry, i) => (
+          <li key={i} className="flex items-start gap-2 text-sm">
+            <span
+              className={`text-xs px-2 py-0.5 rounded font-medium shrink-0 ${LOG_ENTRY_STYLES[entry.type] ?? 'text-gray-600 bg-gray-100'}`}
+            >
+              {entry.type}
+            </span>
+            <span className="text-gray-700 font-mono text-xs mt-0.5">{describeLogEntry(entry, i)}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
@@ -58,11 +120,23 @@ export function SubmissionDetailPage() {
     enabled: Boolean(submissionId) && submission?.status === 'completed',
   });
 
-  const { data: files } = useQuery({
+  const { data: allFiles } = useQuery({
     queryKey: ['sourceFiles', submissionId],
     queryFn: () => getSubmissionFiles(submissionId),
     enabled: Boolean(submissionId) && submission?.status === 'completed',
   });
+
+  // Restrict the file tabs to only what the AI actually reviewed (diff files
+  // + anything it read via read_file). Falls back to the full repo file list
+  // when there's no log yet — older reviews predating this feature, or a
+  // linter-only run where the LLM step never ran at all.
+  const files = useMemo<SourceFile[] | undefined>(() => {
+    if (!allFiles) return allFiles;
+    const reviewed = reviewedPaths(review);
+    if (reviewed.size === 0) return allFiles;
+    const filtered = allFiles.filter((f) => reviewed.has(f.path));
+    return filtered.length > 0 ? filtered : allFiles;
+  }, [allFiles, review]);
 
   const [activePath, setActivePath] = useState<string | null>(null);
   const effectivePath = activePath ?? files?.[0]?.path ?? null;
@@ -126,6 +200,8 @@ export function SubmissionDetailPage() {
           </div>
         </div>
       )}
+
+      {review && <ReviewProcess review={review} />}
 
       {submission.status !== 'completed' && submission.status !== 'failed' && (
         <div

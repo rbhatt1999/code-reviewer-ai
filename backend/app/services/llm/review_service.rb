@@ -11,7 +11,7 @@ module LLM
   # and cost regardless of repo size, and lets the model prioritize
   # linter-flagged files over blindly reading everything.
   class ReviewService
-    Result = Struct.new(:issues_attrs, :attempts, :duration_ms, :degraded, keyword_init: true)
+    Result = Struct.new(:issues_attrs, :attempts, :duration_ms, :degraded, :review_log, keyword_init: true)
 
     EXTENSION_MAP      = Ast::Extractor::EXTENSION_MAP
     MAX_LLM_FILES       = ENV.fetch('LLM_MAX_FILES', 20).to_i        # cap on read_file calls per submission
@@ -40,31 +40,38 @@ module LLM
       return empty_result(t0) if tree.empty?
 
       known_rels = tree.map { |f| f[:rel] }.to_set
+      log = []
       messages = [
         { role: 'system', content: LLM::PromptBuilder::SYSTEM_PROMPT },
-        { role: 'user', content: build_initial_prompt(tree) }
+        { role: 'user', content: build_initial_prompt(tree, log) }
       ]
 
-      run_agent_loop(messages, known_rels, t0)
+      run_agent_loop(messages, known_rels, t0, log)
     rescue StandardError => e
       Rails.logger.warn("[LLM::ReviewService] unexpected error (non-fatal): #{e.class} — #{e.message}")
-      Result.new(issues_attrs: [], attempts: 1, duration_ms: ms_since(t0), degraded: true)
+      Result.new(issues_attrs: [], attempts: 1, duration_ms: ms_since(t0), degraded: true, review_log: [])
     end
 
     private
 
     def empty_result(t0)
-      Result.new(issues_attrs: [], attempts: 0, duration_ms: ms_since(t0), degraded: false)
+      Result.new(issues_attrs: [], attempts: 0, duration_ms: ms_since(t0), degraded: false, review_log: [])
     end
 
     # PR-based submissions (github_webhook) get a diff-first prompt — the
     # changed files come first, full tree second — seeded from pr_diff.json
     # that IngestJob stashed alongside the cloned repo. Everything else
     # (git_url, zip, single_file, paste — or a PR whose diff fetch failed)
-    # falls back to the plain file-tree prompt.
-    def build_initial_prompt(tree)
+    # falls back to the plain file-tree prompt. Every diff file that seeds the
+    # prompt is recorded in `log` up front, before the model has done anything,
+    # since those are "reviewed" from the very first round-trip.
+    def build_initial_prompt(tree, log)
       diff_files = load_pr_diff
       if diff_files.present?
+        diff_files.each do |f|
+          log << { type: 'diff', file: f['filename'], status: f['status'],
+                    additions: f['additions'], deletions: f['deletions'] }
+        end
         @prompt_builder.build_pr_initial(
           language: @submission.language, diff_files: diff_files, file_tree: tree,
           linter_summary: linter_summary_lines
@@ -91,7 +98,7 @@ module LLM
     end
 
     # rubocop:disable Metrics/MethodLength
-    def run_agent_loop(messages, known_rels, t0)
+    def run_agent_loop(messages, known_rels, t0, log)
       attempts    = 0
       files_read  = 0
       degraded    = false
@@ -105,7 +112,7 @@ module LLM
         if tool_calls.present?
           messages << { role: 'assistant', content: message['content'], tool_calls: tool_calls }
           tool_calls.each do |tool_call|
-            text, files_read = execute_tool_call(tool_call, known_rels, files_read)
+            text, files_read = execute_tool_call(tool_call, known_rels, files_read, log)
             messages << { role: 'tool', tool_call_id: tool_call['id'], content: text }
           end
           next
@@ -115,11 +122,13 @@ module LLM
         parsed = safe_parse(message['content'])
         if parsed
           final_attrs = map_issues(parsed, known_rels)
+          log << { type: 'final_answer', issues_found: final_attrs.size }
           break
         end
 
         if attempts >= MAX_JSON_ATTEMPTS
           degraded = true
+          log << { type: 'degraded', reason: 'invalid_json' }
           break
         end
 
@@ -130,6 +139,7 @@ module LLM
         Rails.logger.warn("[LLM::ReviewService] transport error (non-fatal): #{e.message}")
         attempts += 1
         degraded = true
+        log << { type: 'degraded', reason: 'transport_error' }
         break
       end
 
@@ -137,7 +147,8 @@ module LLM
         issues_attrs: final_attrs,
         attempts: [attempts, 1].max,
         duration_ms: ms_since(t0),
-        degraded: degraded || (final_attrs.empty? && attempts.zero?)
+        degraded: degraded || (final_attrs.empty? && attempts.zero?),
+        review_log: log
       )
     end
     # rubocop:enable Metrics/MethodLength
@@ -181,28 +192,40 @@ module LLM
 
     # --- tool execution ------------------------------------------------------
 
-    def execute_tool_call(tool_call, known_rels, files_read)
+    def execute_tool_call(tool_call, known_rels, files_read, log)
       path_arg = extract_path_arg(tool_call)
       @on_progress.call("Reading #{path_arg}…")
 
-      return ["Error: no more files can be read (limit of #{MAX_LLM_FILES} reached).", files_read] if files_read >= MAX_LLM_FILES
+      if files_read >= MAX_LLM_FILES
+        log << { type: 'read_file_error', file: path_arg, error: 'limit_reached' }
+        return ["Error: no more files can be read (limit of #{MAX_LLM_FILES} reached).", files_read]
+      end
 
       rel = known_rels.include?(path_arg) ? path_arg : nil
-      return ["Error: '#{path_arg}' is not a file in the file tree.", files_read] unless rel
+      unless rel
+        log << { type: 'read_file_error', file: path_arg, error: 'not_in_tree' }
+        return ["Error: '#{path_arg}' is not a file in the file tree.", files_read]
+      end
 
       abs = resolve_abs(rel)
-      return ["Error: file not found.", files_read] unless abs && File.file?(abs)
+      unless abs && File.file?(abs)
+        log << { type: 'read_file_error', file: rel, error: 'not_found' }
+        return ["Error: file not found.", files_read]
+      end
 
       size = File.size(abs)
       if size > MAX_BYTES_PER_FILE
+        log << { type: 'read_file_error', file: rel, error: 'too_large', bytes: size }
         return ["Error: file is #{size} bytes, exceeds the #{MAX_BYTES_PER_FILE}-byte review limit.", files_read]
       end
 
       code = File.read(abs, encoding: 'UTF-8')
       numbered = code.lines.each_with_index.map { |line, idx| "#{format('%4d', idx + 1)}| #{line.chomp}" }.join("\n")
+      log << { type: 'read_file', file: rel, bytes: size }
       ["## #{rel}\n#{numbered}", files_read + 1]
     rescue StandardError => e
       Rails.logger.warn("[LLM::ReviewService] read_file error (non-fatal): #{e.message}")
+      log << { type: 'read_file_error', file: path_arg, error: 'read_error' }
       ['Error: could not read file.', files_read]
     end
 

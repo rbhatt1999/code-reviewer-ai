@@ -41,6 +41,7 @@ class LLMReviewJob < ApplicationJob
 
   def stash_llm_meta(submission, result)
     review = submission.review || submission.build_review(mode: :linter_only, total_issues: 0)
-    review.update!(llm_attempts: result.attempts, llm_duration_ms: result.duration_ms)
+    review.update!(llm_attempts: result.attempts, llm_duration_ms: result.duration_ms,
+                   review_log: result.review_log || [])
   end
 end

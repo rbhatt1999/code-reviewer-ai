@@ -56,6 +56,7 @@ RSpec.describe LLM::ReviewService, type: :service do
           expect(result.issues_attrs).to eq([])
           expect(result.attempts).to eq(0)
           expect(result.degraded).to be(false)
+          expect(result.review_log).to eq([])
           expect(WebMock).not_to have_requested(:post, chat_url)
         end
       end
@@ -81,6 +82,7 @@ RSpec.describe LLM::ReviewService, type: :service do
           expect(attr[:confidence]).to eq(0.9)
           expect(result.degraded).to be(false)
           expect(result.attempts).to eq(1)
+          expect(result.review_log).to eq([{ type: 'final_answer', issues_found: 1 }])
           expect(WebMock).to have_requested(:post, chat_url).times(1)
         end
       end
@@ -122,6 +124,10 @@ RSpec.describe LLM::ReviewService, type: :service do
           expect(result.issues_attrs.size).to eq(1)
           expect(result.issues_attrs.first[:file_path]).to eq('app.rb')
           expect(result.degraded).to be(false)
+          expect(result.review_log).to eq([
+            { type: 'read_file', file: 'app.rb', bytes: 18 },
+            { type: 'final_answer', issues_found: 1 }
+          ])
           expect(WebMock).to have_requested(:post, chat_url).times(2)
         end
       end
@@ -141,6 +147,7 @@ RSpec.describe LLM::ReviewService, type: :service do
 
           expect(result.issues_attrs).to eq([])
           expect(result.degraded).to be(false)
+          expect(result.review_log.first).to include(type: 'read_file_error', file: 'big.rb', error: 'too_large')
           expect(WebMock).to have_requested(:post, chat_url).times(2)
         end
       end
@@ -159,6 +166,9 @@ RSpec.describe LLM::ReviewService, type: :service do
           result = build_service(tmpdir).call
 
           expect(result.issues_attrs).to eq([])
+          expect(result.review_log.first).to eq(
+            { type: 'read_file_error', file: '../../etc/passwd', error: 'not_in_tree' }
+          )
           expect(WebMock).to have_requested(:post, chat_url).times(2)
         end
       end
@@ -195,6 +205,7 @@ RSpec.describe LLM::ReviewService, type: :service do
           expect(result.issues_attrs).to eq([])
           expect(result.attempts).to eq(3)
           expect(result.degraded).to be(true)
+          expect(result.review_log).to eq([{ type: 'degraded', reason: 'invalid_json' }])
         end
       end
     end
@@ -210,6 +221,7 @@ RSpec.describe LLM::ReviewService, type: :service do
 
           expect(result.degraded).to be(true)
           expect(result.attempts).to eq(1)
+          expect(result.review_log).to eq([{ type: 'degraded', reason: 'transport_error' }])
         end
       end
     end
@@ -284,6 +296,9 @@ RSpec.describe LLM::ReviewService, type: :service do
           result = build_service(cloned_dir).call
 
           expect(result.issues_attrs.size).to eq(1)
+          expect(result.review_log.first).to eq(
+            { type: 'diff', file: 'app.rb', status: 'modified', additions: 1, deletions: 0 }
+          )
           expect(WebMock).to have_requested(:post, chat_url)
             .with(body: /Changed files in this pull request/)
         end

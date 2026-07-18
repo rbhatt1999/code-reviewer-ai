@@ -101,6 +101,13 @@ RSpec.describe LLMReviewJob, type: :job do
       expect(submission.reload.review.llm_attempts).to be >= 1
     end
 
+    it 'stores the review_log with a final_answer step' do
+      described_class.perform_now(submission.id)
+      expect(submission.reload.review.review_log).to include(
+        a_hash_including('type' => 'final_answer', 'issues_found' => 1)
+      )
+    end
+
     it 'enqueues AggregateReportJob' do
       expect do
         described_class.perform_now(submission.id)

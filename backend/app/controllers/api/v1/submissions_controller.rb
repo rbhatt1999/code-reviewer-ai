@@ -159,7 +159,8 @@ module Api
           mode: review.mode,
           summary: review.summary,
           scores: review.scores,
-          total_issues: review.total_issues
+          total_issues: review.total_issues,
+          review_log: review.review_log
         }
       end
     end

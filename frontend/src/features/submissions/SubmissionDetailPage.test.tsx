@@ -90,6 +90,7 @@ const mockReview = {
   summary: 'Found 2 style issues in app.rb',
   scores: null,
   total_issues: 2,
+  review_log: [],
 };
 
 // All tests use route pattern so useParams can extract id
@@ -225,5 +226,57 @@ describe('SubmissionDetailPage', () => {
     // Wait for the page to finish loading (the in-progress banner appears for pending)
     await screen.findByTestId('submission-in-progress');
     expect(screen.queryByTestId('report-download-json')).not.toBeInTheDocument();
+  });
+
+  it('does not render the review process card when review_log is empty', async () => {
+    renderWithProviders(<SubmissionDetailPage />, routeOptions);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('review-summary')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('review-process')).not.toBeInTheDocument();
+  });
+
+  it('renders the review process steps when review_log has entries', async () => {
+    mockedGetReview.mockResolvedValue({
+      ...mockReview,
+      review_log: [
+        { type: 'diff', file: 'app.rb', status: 'modified', additions: 2, deletions: 1 },
+        { type: 'read_file', file: 'app/models/user.rb', bytes: 200 },
+        { type: 'final_answer', issues_found: 2 },
+      ],
+    });
+
+    renderWithProviders(<SubmissionDetailPage />, routeOptions);
+
+    const section = await screen.findByTestId('review-process');
+    expect(section).toHaveTextContent('Changed in PR: app.rb');
+    expect(section).toHaveTextContent('Read for context: app/models/user.rb');
+    expect(section).toHaveTextContent('Finished — 2 issue(s) reported');
+  });
+
+  it('restricts file tabs to only files the AI reviewed, dropping untouched repo files', async () => {
+    mockedGetReview.mockResolvedValue({
+      ...mockReview,
+      review_log: [
+        { type: 'diff', file: 'app.rb', status: 'modified', additions: 2, deletions: 1 },
+        { type: 'read_file', file: 'app/models/user.rb', bytes: 200 },
+      ],
+    });
+    mockedGetSubmissionFiles.mockResolvedValue([
+      { path: 'app.rb' },
+      { path: 'README.md' },
+      { path: 'config/routes.rb' },
+      { path: 'app/models/user.rb' },
+    ]);
+
+    renderWithProviders(<SubmissionDetailPage />, routeOptions);
+
+    const section = await screen.findByTestId('code-viewer-section');
+    await waitFor(() => expect(section.querySelectorAll('button')).toHaveLength(2));
+    expect(section).toHaveTextContent('app.rb');
+    expect(section).toHaveTextContent('app/models/user.rb');
+    expect(section).not.toHaveTextContent('README.md');
+    expect(section).not.toHaveTextContent('config/routes.rb');
   });
 });

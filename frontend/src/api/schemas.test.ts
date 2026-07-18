@@ -157,6 +157,36 @@ describe('ReviewSchema', () => {
     });
     expect(result.scores).toBeNull();
   });
+
+  it('defaults review_log to an empty array when absent (pre-feature reviews)', () => {
+    const result = ReviewSchema.parse({
+      id: 4,
+      mode: 'linter_only',
+      summary: null,
+      scores: null,
+      total_issues: 0,
+    });
+    expect(result.review_log).toEqual([]);
+  });
+
+  it('parses a review_log with diff, read_file, and final_answer steps', () => {
+    const result = ReviewSchema.parse({
+      id: 5,
+      mode: 'hybrid',
+      summary: null,
+      scores: null,
+      total_issues: 1,
+      review_log: [
+        { type: 'diff', file: 'app.rb', status: 'modified', additions: 2, deletions: 1 },
+        { type: 'read_file', file: 'app/models/user.rb', bytes: 200 },
+        { type: 'final_answer', issues_found: 1 },
+      ],
+    });
+    expect(result.review_log).toHaveLength(3);
+    expect(result.review_log[0].file).toBe('app.rb');
+    expect(result.review_log[1].type).toBe('read_file');
+    expect(result.review_log[2].issues_found).toBe(1);
+  });
 });
 
 describe('FileContentSchema', () => {

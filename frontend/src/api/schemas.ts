@@ -58,12 +58,31 @@ export const IssueSchema = z.object({
 });
 export type Issue = z.infer<typeof IssueSchema>;
 
+// One step of what the agentic reviewer actually did, in order: which
+// changed files seeded the prompt (diff), which extra files it asked to
+// read (read_file / read_file_error), and how it finished
+// (final_answer / degraded). Unknown/future step types just render with
+// their raw fields, so this stays forward-compatible.
+export const ReviewLogEntrySchema = z.object({
+  type: z.string(),
+  file: z.string().optional(),
+  status: z.string().optional(),
+  additions: z.number().nullable().optional(),
+  deletions: z.number().nullable().optional(),
+  bytes: z.number().optional(),
+  error: z.string().optional(),
+  issues_found: z.number().optional(),
+  reason: z.string().optional(),
+});
+export type ReviewLogEntry = z.infer<typeof ReviewLogEntrySchema>;
+
 export const ReviewSchema = z.object({
   id: z.number(),
   mode: z.enum(['hybrid', 'linter_only']),
   summary: z.string().nullable(),
   scores: z.record(z.string(), z.number()).nullable(),
   total_issues: z.number(),
+  review_log: z.array(ReviewLogEntrySchema).default([]),
 });
 export type Review = z.infer<typeof ReviewSchema>;
 

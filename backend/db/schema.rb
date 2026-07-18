@@ -76,6 +76,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_05_21_175413) do
     t.integer "total_issues", default: 0, null: false
     t.integer "llm_attempts", default: 0, null: false
     t.integer "llm_duration_ms"
+    t.jsonb "review_log", default: [], null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["submission_id"], name: "index_reviews_on_submission_id", unique: true
