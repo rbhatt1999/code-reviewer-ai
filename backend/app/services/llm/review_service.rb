@@ -12,10 +12,12 @@ module LLM
     SEV_ALLOWED        = %w[info low medium high critical].freeze
     CAT_ALLOWED        = %w[code_quality bug style security refactor].freeze
 
-    def initialize(submission:, client: LLM::DeepseekClient.new, prompt_builder: LLM::PromptBuilder.new)
+    def initialize(submission:, client: LLM::DeepseekClient.new, prompt_builder: LLM::PromptBuilder.new,
+                   on_progress: ->(_message) {})
       @submission     = submission
       @client         = client
       @prompt_builder = prompt_builder
+      @on_progress    = on_progress
     end
 
     def call
@@ -24,10 +26,12 @@ module LLM
       total_attempts = 0
       any_degraded = false
 
-      source_files.first(MAX_LLM_FILES).each do |abs_path|
+      files = source_files.first(MAX_LLM_FILES)
+      files.each_with_index do |abs_path, idx|
         next if File.size(abs_path) > MAX_BYTES_PER_FILE
 
         rel  = relative_path(abs_path)
+        @on_progress.call("Reviewing #{rel} with DeepSeek (#{idx + 1}/#{files.size})…")
         code = File.read(abs_path, encoding: 'UTF-8')
         attrs, file_attempts, file_degraded = review_one_file(rel, code)
         all_attrs.concat(attrs)

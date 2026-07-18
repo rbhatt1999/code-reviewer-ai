@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getConsumer } from '@cable/consumer';
 
@@ -12,8 +12,15 @@ interface SubmissionStatusEvent {
   updated_at?: string;
 }
 
-export function useSubmissionChannel(submissionId: number | undefined): void {
+// Returns the most recent live broadcast for this submission (status,
+// progress %, and a human-readable "what's happening right now" message),
+// in addition to invalidating the React Query cache so persisted fields
+// (status, issues_count, etc.) get refetched from the API.
+export function useSubmissionChannel(
+  submissionId: number | undefined,
+): SubmissionStatusEvent | null {
   const queryClient = useQueryClient();
+  const [live, setLive] = useState<SubmissionStatusEvent | null>(null);
 
   useEffect(() => {
     if (!submissionId || Number.isNaN(submissionId)) return;
@@ -24,6 +31,7 @@ export function useSubmissionChannel(submissionId: number | undefined): void {
       { channel: 'SubmissionChannel', submission_id: submissionId },
       {
         received(data) {
+          setLive(data);
           queryClient.invalidateQueries({ queryKey: ['submission', submissionId] });
           if (data.status === 'completed') {
             queryClient.invalidateQueries({ queryKey: ['issues', submissionId] });
@@ -36,4 +44,6 @@ export function useSubmissionChannel(submissionId: number | undefined): void {
 
     return () => sub.unsubscribe();
   }, [submissionId, queryClient]);
+
+  return live;
 }

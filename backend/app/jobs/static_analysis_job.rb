@@ -25,7 +25,9 @@ class StaticAnalysisJob < ApplicationJob
     # Idempotency: only process when the pipeline is at the right entry point.
     return unless submission.analyzing?
 
-    runners_for(submission.language).each do |runner_name, runner_class|
+    runners = runners_for(submission.language)
+    runners.each_with_index do |(runner_name, runner_class), idx|
+      broadcast_status(submission, message: "Running #{runner_name} (#{idx + 1}/#{runners.size})…")
       run_single_runner(runner_name, runner_class, submission)
     end
 

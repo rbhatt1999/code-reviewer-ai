@@ -16,14 +16,22 @@ class IngestJob < ApplicationJob
     broadcast_status(submission)
 
     case submission.kind
-    when 'zip'            then handle_zip(submission)
-    when 'git_url'        then handle_git_url(submission)
-    when 'github_webhook' then handle_github_webhook(submission)
+    when 'zip'
+      broadcast_status(submission, message: 'Extracting ZIP archive…')
+      handle_zip(submission)
+    when 'git_url'
+      broadcast_status(submission, message: 'Cloning repository…')
+      handle_git_url(submission)
+    when 'github_webhook'
+      broadcast_status(submission, message: 'Cloning repository at PR head commit…')
+      handle_github_webhook(submission)
     else
       # paste / single_file — verify the pre-stored blob.
+      broadcast_status(submission, message: 'Verifying uploaded file…')
       verify_blob!(submission)
     end
 
+    broadcast_status(submission, message: 'Parsing code structure (AST)…')
     extract_ast!(submission)
 
     submission.finish_ingest!

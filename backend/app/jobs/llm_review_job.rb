@@ -8,7 +8,10 @@ class LLMReviewJob < ApplicationJob
     return unless submission
     return unless submission.reviewing?
 
-    result = LLM::ReviewService.new(submission: submission).call # never raises on LLM-domain errors
+    result = LLM::ReviewService.new(
+      submission: submission,
+      on_progress: ->(message) { broadcast_status(submission, message: message) }
+    ).call # never raises on LLM-domain errors
     persist_issues(result.issues_attrs, submission)
     stash_llm_meta(submission, result)
 

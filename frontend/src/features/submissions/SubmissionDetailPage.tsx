@@ -38,7 +38,7 @@ export function SubmissionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const submissionId = Number(id);
 
-  useSubmissionChannel(submissionId);
+  const live = useSubmissionChannel(submissionId);
 
   const { data: submission, isLoading: subLoading } = useQuery({
     queryKey: ['submission', submissionId],
@@ -132,7 +132,25 @@ export function SubmissionDetailPage() {
           className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-blue-700 text-sm"
           data-testid="submission-in-progress"
         >
-          Review in progress — status: <strong>{submission.status}</strong>
+          <div className="flex items-center justify-between mb-2">
+            <span>
+              Review in progress — status: <strong>{submission.status}</strong>
+            </span>
+            <span className="text-xs text-blue-500" data-testid="submission-progress-pct">
+              {live?.progress ?? 0}%
+            </span>
+          </div>
+          <div className="w-full bg-blue-100 rounded-full h-1.5 mb-2 overflow-hidden">
+            <div
+              className="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
+              style={{ width: `${live?.progress ?? 0}%` }}
+            />
+          </div>
+          {live?.message && (
+            <p className="text-xs text-blue-600 italic" data-testid="submission-live-message">
+              {live.message}
+            </p>
+          )}
         </div>
       )}
 

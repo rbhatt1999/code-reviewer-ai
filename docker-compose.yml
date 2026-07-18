@@ -16,7 +16,7 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cra"]
+      test: ["CMD-SHELL", "pg_isready -U cra -d code_reviewer_ai_development"]
       interval: 5s
       timeout: 3s
       retries: 12
