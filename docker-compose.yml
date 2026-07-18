@@ -46,6 +46,11 @@ services:
       REDIS_URL: redis://redis:6379/0
     ports:
       - "3000:3000"
+    volumes:
+      # backend (writer of uploaded blobs) and sidekiq (reader, in IngestJob)
+      # are separate containers — without this shared volume each has its own
+      # private /rails/storage and the worker can never see what the API wrote.
+      - submission_storage:/rails/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,6 +64,8 @@ services:
       DATABASE_HOST: postgres
       REDIS_URL: redis://redis:6379/0
     command: bundle exec sidekiq -C config/sidekiq.yml
+    volumes:
+      - submission_storage:/rails/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,3 +91,4 @@ services:
 volumes:
   pg_data:
   redis_data:
+  submission_storage:
