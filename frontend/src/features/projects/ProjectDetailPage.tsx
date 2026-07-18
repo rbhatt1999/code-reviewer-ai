@@ -71,7 +71,7 @@ export function ProjectDetailPage() {
           <Link to="/projects" className="text-sm text-indigo-600 hover:underline mb-2 inline-block">
             &larr; Back to projects
           </Link>
-          <h1 className="text-2xl font-bold text-gray-800">{project.name}</h1>
+          <p className="app-kicker">Project</p><h1 className="app-page-title mt-1">{project.name}</h1>
           {project.description && (
             <p className="text-gray-500 mt-1">{project.description}</p>
           )}
@@ -79,7 +79,7 @@ export function ProjectDetailPage() {
         <div className="flex gap-2">
           <Link
             to={`/projects/${projectId}/submissions/new`}
-            className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-indigo-700"
+            className="btn-primary"
             data-testid="project-detail-new-submission"
           >
             New submission
@@ -87,7 +87,7 @@ export function ProjectDetailPage() {
           <button
             onClick={handleDelete}
             disabled={deleteMutation.isPending}
-            className="border border-red-300 text-red-600 px-4 py-2 rounded text-sm font-medium hover:bg-red-50 disabled:opacity-50"
+            className="btn-danger"
             data-testid="project-detail-delete"
           >
             Delete
@@ -95,7 +95,7 @@ export function ProjectDetailPage() {
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6 text-sm text-gray-600 grid grid-cols-2 gap-4">
+      <div className="app-panel mb-6 grid grid-cols-1 gap-4 p-5 text-sm text-zinc-600 sm:grid-cols-2">
         <div>
           <span className="font-medium text-gray-700">Language:</span>{' '}
           <span className="font-mono">{project.language}</span>
@@ -147,7 +147,7 @@ export function ProjectDetailPage() {
           {submissions.map((sub) => (
             <li
               key={sub.id}
-              className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
+              className="app-panel p-4 hover:border-zinc-300"
               data-testid={`submission-item-${sub.id}`}
             >
               <Link to={`/submissions/${sub.id}`} className="block">
@@ -203,7 +203,7 @@ function WebhookPanel({ project, onRegenerate, isRegenerating }: WebhookPanelPro
 
   return (
     <div
-      className="bg-white border border-gray-200 rounded-lg p-4 mb-6 text-sm"
+      className="app-panel mb-6 p-5 text-sm"
       data-testid="webhook-panel"
     >
       <h2 className="text-sm font-semibold text-gray-700 mb-2">GitHub webhook (auto PR review)</h2>

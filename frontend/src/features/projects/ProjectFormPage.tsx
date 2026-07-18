@@ -45,9 +45,9 @@ export function ProjectFormPage() {
   const onSubmit = (data: ProjectForm) => mutation.mutate(data);
 
   return (
-    <div className="max-w-xl" data-testid="project-form-page">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">New project</h1>
-      <div className="bg-white shadow rounded-lg p-8">
+    <div className="max-w-2xl" data-testid="project-form-page">
+      <p className="app-kicker">Workspace</p><h1 className="app-page-title mt-1 mb-2">New project</h1><p className="mb-7 text-sm text-zinc-500">Connect repository details before first review.</p>
+      <div className="app-panel p-6 sm:p-8">
         <form onSubmit={handleSubmit(onSubmit)} noValidate data-testid="project-form">
           {errors.root && (
             <p className="text-red-600 text-sm mb-4" data-testid="project-form-error">
@@ -138,7 +138,7 @@ export function ProjectFormPage() {
             <button
               type="submit"
               disabled={mutation.isPending}
-              className="bg-indigo-600 text-white px-6 py-2 rounded text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+              className="btn-primary"
               data-testid="project-form-submit"
             >
               {mutation.isPending ? 'Creating...' : 'Create project'}
@@ -146,7 +146,7 @@ export function ProjectFormPage() {
             <button
               type="button"
               onClick={() => navigate('/projects')}
-              className="border border-gray-300 text-gray-700 px-6 py-2 rounded text-sm font-medium hover:bg-gray-50"
+              className="btn-secondary"
               data-testid="project-form-cancel"
             >
               Cancel

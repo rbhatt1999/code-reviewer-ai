@@ -22,21 +22,21 @@ export function CodeViewer({ content, issues }: CodeViewerProps) {
     byLine.set(issue.line_start, arr);
   }
   return (
-    <pre className="text-sm font-mono overflow-x-auto bg-white border rounded">
+    <pre className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950 py-3 font-mono text-sm text-zinc-100 shadow-sm">
       {lines.map((line, i) => {
         const lineNo = i + 1;
         const lineIssues = byLine.get(lineNo) ?? [];
         return (
           <div key={lineNo}>
-            <div className="flex" data-testid={`code-line-${lineNo}`}>
-              <span className="select-none w-12 pr-3 text-right text-gray-400">{lineNo}</span>
+            <div className="flex px-3 hover:bg-white/5" data-testid={`code-line-${lineNo}`}>
+              <span className="w-12 select-none pr-3 text-right text-zinc-500">{lineNo}</span>
               <span className="whitespace-pre">{line || ' '}</span>
             </div>
             {lineIssues.map((issue) => (
               <div
                 key={issue.id}
                 data-testid={`issue-overlay-${issue.id}`}
-                className={`ml-12 my-1 px-2 py-1 rounded text-xs ${SEVERITY_COLORS[issue.severity] ?? 'bg-gray-100'}`}
+                className={`ml-16 my-1 mr-3 rounded px-2 py-1 text-xs ${SEVERITY_COLORS[issue.severity] ?? 'bg-gray-100'}`}
               >
                 <span className="font-semibold">{issue.rule_id}</span>: {issue.message}
                 {issue.suggestion ? <div className="mt-0.5 italic">{issue.suggestion}</div> : null}

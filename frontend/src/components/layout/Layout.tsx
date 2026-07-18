@@ -22,43 +22,45 @@ export function Layout({ children }: LayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center justify-between gap-4">
             <Link
               to="/projects"
-              className="text-lg font-semibold text-indigo-600 hover:text-indigo-800"
+              className="flex items-center gap-2 text-[15px] font-semibold tracking-tight text-zinc-950"
             >
-              CodeReviewer.AI
+              <span className="grid h-7 w-7 place-items-center rounded-md bg-zinc-950 text-xs font-bold text-white">CR</span>
+              CodeReviewer<span className="text-blue-600">.AI</span>
             </Link>
-            <div className="flex items-center gap-4">
+            <nav className="flex items-center gap-2">
+              <Link to="/projects" className="hidden rounded-md px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950 sm:block">Projects</Link>
               {user?.role === 'admin' && (
                 <Link
                   to="/admin"
-                  className="text-sm text-indigo-600 hover:text-indigo-800"
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
                   data-testid="layout-admin-link"
                 >
                   Admin
                 </Link>
               )}
               {user && (
-                <span className="text-sm text-gray-600" data-testid="layout-user-email">
+                <span className="hidden rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600 md:block" data-testid="layout-user-email">
                   {user.email}
                 </span>
               )}
               <button
                 onClick={handleLogout}
-                className="text-sm text-gray-500 hover:text-gray-700 underline"
+                className="rounded-md px-2.5 py-1.5 text-sm font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
                 data-testid="layout-logout-button"
               >
                 Logout
               </button>
-            </div>
+            </nav>
           </div>
         </div>
       </header>
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">{children}</main>
     </div>
   );
 }

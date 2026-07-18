@@ -26,19 +26,19 @@ function ActivityTimeline({ activities, active }: { activities: SubmissionActivi
   const currentIndex = active ? activities.length - 1 : -1;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-5 mb-6" data-testid="submission-activity">
-      <h2 className="text-base font-semibold text-gray-700 mb-3" data-testid={active ? 'submission-in-progress' : undefined}>Review activity</h2>
-      <ol className="space-y-1.5">
+    <div className="app-panel mb-6 overflow-hidden" data-testid="submission-activity">
+      <div className="border-b border-zinc-100 px-5 py-4"><p className="app-kicker">Live pipeline</p><h2 className="mt-1 text-base font-semibold text-zinc-950" data-testid={active ? 'submission-in-progress' : undefined}>Review activity</h2></div>
+      <ol className="space-y-2 px-5 py-4">
         {activities.length === 0 && active && (
-          <li className="flex items-start gap-2 text-sm" data-testid="activity-current">
+          <li className="flex items-start gap-3 rounded-lg bg-blue-50 px-3 py-2.5 text-sm" data-testid="activity-current">
             <span className="text-blue-600">●</span>
             <span className="text-gray-700">Review is starting</span>
           </li>
         )}
         {activities.map((entry, index) => (
-          <li key={entry.created_at} className="flex items-start gap-2 text-sm" data-testid={index === currentIndex ? 'activity-current' : undefined}>
-            <span className={index === currentIndex ? 'text-blue-600' : 'text-green-600'}>{index === currentIndex ? '●' : '✓'}</span>
-            <span className="text-gray-700">{entry.message}</span>
+          <li key={entry.created_at} className={`flex items-start gap-3 rounded-lg px-3 py-2 text-sm ${index === currentIndex ? 'bg-blue-50 text-zinc-950' : 'text-zinc-600'}`} data-testid={index === currentIndex ? 'activity-current' : undefined}>
+            <span className={index === currentIndex ? 'text-blue-600' : 'text-emerald-600'}>{index === currentIndex ? '●' : '✓'}</span>
+            <span>{entry.message}</span>
           </li>
         ))}
       </ol>
@@ -58,7 +58,7 @@ function StatusBadge({ status }: { status: string }) {
   };
   return (
     <span
-      className={`text-xs px-2 py-1 rounded font-medium ${colors[status] ?? 'bg-gray-100 text-gray-600'}`}
+      className={`rounded-md px-2 py-1 text-xs font-medium capitalize ${colors[status] ?? 'bg-gray-100 text-gray-600'}`}
     >
       {status}
     </span>
@@ -142,17 +142,17 @@ export function SubmissionDetailPage() {
     <div data-testid="submission-detail-page">
       <Link
         to={`/projects/${submission.project_id}`}
-        className="text-sm text-indigo-600 hover:underline mb-4 inline-block"
+        className="mb-5 inline-block text-sm font-medium text-zinc-500 hover:text-zinc-900"
       >
         &larr; Back to project
       </Link>
 
-      <div className="flex items-start justify-between mb-6">
+      <div className="mb-8 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">
+          <p className="app-kicker">Submission</p><h1 className="app-page-title mt-1">
             {submission.source_ref ?? 'Submission'}
           </h1>
-          <p className="text-gray-400 text-sm mt-1">
+          <p className="mt-1 text-sm text-zinc-500">
             {submission.language} &middot; {(submission.size_bytes / 1024).toFixed(1)} KB
           </p>
         </div>
@@ -166,18 +166,18 @@ export function SubmissionDetailPage() {
       )}
 
       {review && (
-        <div className="bg-white border border-gray-200 rounded-lg p-5 mb-6" data-testid="review-summary">
-          <h2 className="text-base font-semibold text-gray-700 mb-2">Review summary</h2>
+        <div className="app-panel mb-6 p-5" data-testid="review-summary">
+          <p className="app-kicker">Result</p><h2 className="mt-1 text-base font-semibold text-zinc-950">Review summary</h2>
           {review.summary && (
-            <p className="text-sm text-gray-600 whitespace-pre-wrap">{review.summary}</p>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-600">{review.summary}</p>
           )}
-          <div className="mt-3 flex flex-wrap gap-4 text-sm">
-            <span>
-              <span className="text-gray-500">Mode:</span>{' '}
+          <div className="mt-4 flex flex-wrap gap-2 text-sm">
+            <span className="rounded-md bg-zinc-100 px-2.5 py-1 text-zinc-600">
+              <span className="text-zinc-500">Mode:</span>{' '}
               <span className="font-medium">{review.mode}</span>
             </span>
-            <span>
-              <span className="text-gray-500">Total issues:</span>{' '}
+            <span className="rounded-md bg-zinc-100 px-2.5 py-1 text-zinc-600">
+              <span className="text-zinc-500">Issues:</span>{' '}
               <span className="font-medium">{review.total_issues}</span>
             </span>
           </div>
@@ -203,12 +203,12 @@ export function SubmissionDetailPage() {
       {file && (
         <div data-testid="code-viewer-section" className="mb-6">
           {files && files.length > 1 && (
-            <div className="flex gap-2 mb-2 flex-wrap">
+            <div className="mb-3 flex flex-wrap gap-2">
               {files.map((f) => (
                 <button
                   key={f.path}
                   onClick={() => setActivePath(f.path)}
-                  className={`text-xs px-2 py-1 rounded border ${effectivePath === f.path ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'}`}
+                  className={`rounded-md border px-2.5 py-1.5 font-mono text-xs ${effectivePath === f.path ? 'border-zinc-900 bg-zinc-900 text-white' : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50'}`}
                 >
                   {f.path}
                 </button>
@@ -222,14 +222,14 @@ export function SubmissionDetailPage() {
         </div>
       )}
 
-      <h2 className="text-lg font-semibold text-gray-700 mb-3">Issues</h2>
+      <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-semibold tracking-tight text-zinc-950">Issues</h2>{issues && <span className="text-sm text-zinc-500">{issues.length} found</span>}</div>
 
       {issuesLoading && (
         <p className="text-gray-500">Loading issues...</p>
       )}
 
       {issues && issues.length === 0 && (
-        <p className="text-gray-400" data-testid="issues-empty">
+        <p className="empty-state" data-testid="issues-empty">
           No issues found.
         </p>
       )}
@@ -244,10 +244,10 @@ export function SubmissionDetailPage() {
 function IssuesTable({ issues }: { issues: Issue[] }) {
   return (
     <div className="overflow-x-auto" data-testid="issues-table">
-      <table className="min-w-full bg-white border border-gray-200 rounded-lg text-sm">
-        <thead className="bg-gray-50">
+      <table className="min-w-full overflow-hidden rounded-xl border border-zinc-200 bg-white text-sm">
+        <thead className="bg-zinc-50">
           <tr>
-            <th className="px-4 py-3 text-left font-medium text-gray-600 w-24">Severity</th>
+            <th className="w-24 px-4 py-3 text-left text-xs font-medium uppercase tracking-[.1em] text-zinc-500">Severity</th>
             <th className="px-4 py-3 text-left font-medium text-gray-600">File</th>
             <th className="px-4 py-3 text-left font-medium text-gray-600 w-16">Line</th>
             <th className="px-4 py-3 text-left font-medium text-gray-600">Rule</th>
@@ -267,7 +267,7 @@ function IssuesTable({ issues }: { issues: Issue[] }) {
 function IssueRow({ issue }: { issue: Issue }) {
   return (
     <tr
-      className="border-t border-gray-100 hover:bg-gray-50"
+      className="border-t border-zinc-100 hover:bg-zinc-50/70"
       data-testid={`issue-row-${issue.id}`}
     >
       <td className="px-4 py-3">

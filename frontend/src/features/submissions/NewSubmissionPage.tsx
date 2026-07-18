@@ -54,19 +54,19 @@ export function NewSubmissionPage() {
   };
 
   return (
-    <div className="max-w-xl" data-testid="new-submission-page">
+    <div className="max-w-2xl" data-testid="new-submission-page">
       <Link
         to={`/projects/${projectId}`}
-        className="text-sm text-indigo-600 hover:underline mb-4 inline-block"
+        className="mb-5 inline-block text-sm font-medium text-zinc-500 hover:text-zinc-900"
       >
         &larr; Back to project
       </Link>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">New submission</h1>
+      <p className="app-kicker">New review</p><h1 className="app-page-title mt-1 mb-2">Submit code</h1><p className="mb-7 text-sm text-zinc-500">Upload one source file for automated analysis.</p>
 
-      <div className="bg-white shadow rounded-lg p-8">
+      <div className="app-panel p-6 sm:p-8">
         <form onSubmit={handleSubmit} noValidate data-testid="submission-form">
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-600 mb-2">
+            <label className="field-label">
               Source file <span className="text-red-500">*</span>
             </label>
             <input
@@ -74,7 +74,7 @@ export function NewSubmissionPage() {
               type="file"
               accept={ACCEPTED_EXTENSIONS}
               onChange={handleFileChange}
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+              className="block w-full rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-3 text-sm text-zinc-500 file:mr-4 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-zinc-800"
               data-testid="submission-file-input"
             />
             <p className="text-xs text-gray-400 mt-1">
@@ -88,7 +88,7 @@ export function NewSubmissionPage() {
           </div>
 
           {selectedFile && (
-            <div className="mb-4 text-sm text-gray-500" data-testid="submission-selected-file">
+            <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5 text-sm text-blue-800" data-testid="submission-selected-file">
               Selected: <strong>{selectedFile.name}</strong> (
               {(selectedFile.size / 1024).toFixed(1)} KB)
             </div>
@@ -104,7 +104,7 @@ export function NewSubmissionPage() {
             <button
               type="submit"
               disabled={!selectedFile || mutation.isPending}
-              className="bg-indigo-600 text-white px-6 py-2 rounded text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+              className="btn-primary"
               data-testid="submission-submit"
             >
               {mutation.isPending ? 'Uploading...' : 'Submit for review'}
@@ -112,7 +112,7 @@ export function NewSubmissionPage() {
             <button
               type="button"
               onClick={() => navigate(`/projects/${projectId}`)}
-              className="border border-gray-300 text-gray-700 px-6 py-2 rounded text-sm font-medium hover:bg-gray-50"
+              className="btn-secondary"
               data-testid="submission-cancel"
             >
               Cancel

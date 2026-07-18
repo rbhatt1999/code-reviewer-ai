@@ -10,11 +10,11 @@ export function ProjectListPage() {
 
   return (
     <div data-testid="project-list-page">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Projects</h1>
+      <div className="mb-8 flex items-end justify-between gap-4">
+        <div><p className="app-kicker">Workspace</p><h1 className="app-page-title mt-1">Projects</h1><p className="mt-1 text-sm text-zinc-500">Repositories and review history.</p></div>
         <Link
           to="/projects/new"
-          className="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-indigo-700"
+          className="btn-primary shrink-0"
           data-testid="project-list-new-button"
         >
           New project
@@ -34,35 +34,35 @@ export function ProjectListPage() {
       )}
 
       {projects && projects.length === 0 && (
-        <div className="text-center py-16 text-gray-400" data-testid="project-list-empty">
-          <p className="text-lg">No projects yet.</p>
-          <Link to="/projects/new" className="text-indigo-600 hover:underline mt-2 inline-block">
+        <div className="empty-state" data-testid="project-list-empty">
+          <p className="text-base font-medium text-zinc-800">No projects yet.</p>
+          <Link to="/projects/new" className="mt-2 inline-block font-medium text-blue-600 hover:text-blue-700">
             Create your first project
           </Link>
         </div>
       )}
 
       {projects && projects.length > 0 && (
-        <ul className="space-y-3" data-testid="project-list">
+        <ul className="overflow-hidden rounded-xl border border-zinc-200 bg-white" data-testid="project-list">
           {projects.map((project) => (
             <li
               key={project.id}
-              className="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
+              className="border-b border-zinc-200 last:border-0 hover:bg-zinc-50/80"
               data-testid={`project-list-item-${project.id}`}
             >
-              <Link to={`/projects/${project.id}`} className="block p-5">
+              <Link to={`/projects/${project.id}`} className="block p-5 sm:p-6">
                 <div className="flex items-start justify-between">
                   <div>
-                    <h2 className="text-base font-semibold text-gray-800">{project.name}</h2>
+                    <h2 className="text-base font-semibold text-zinc-950">{project.name}</h2>
                     {project.description && (
-                      <p className="text-sm text-gray-500 mt-1">{project.description}</p>
+                      <p className="mt-1 text-sm text-zinc-500">{project.description}</p>
                     )}
                   </div>
-                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded font-mono">
+                  <span className="rounded-md border border-blue-100 bg-blue-50 px-2 py-1 font-mono text-xs text-blue-700">
                     {project.language}
                   </span>
                 </div>
-                <p className="text-xs text-gray-400 mt-3">
+                <p className="mt-3 text-xs text-zinc-400">
                   {project.submissions_count} submission{project.submissions_count !== 1 ? 's' : ''}
                 </p>
               </Link>

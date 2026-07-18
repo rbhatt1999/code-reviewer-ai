@@ -36,26 +36,27 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen bg-[#f6f7fb] px-4 py-12 sm:grid sm:place-items-center">
       <div className="w-full max-w-md">
-        <h1 className="text-2xl font-bold text-center text-gray-800 mb-6">CodeReviewer.AI</h1>
-        <div className="bg-white shadow rounded-lg p-8">
-          <h2 className="text-xl font-semibold text-gray-700 mb-4">Sign in</h2>
+        <div className="mb-8 text-center"><span className="inline-grid h-9 w-9 place-items-center rounded-lg bg-zinc-950 text-sm font-bold text-white">CR</span><h1 className="mt-3 text-xl font-semibold tracking-tight text-zinc-950">CodeReviewer.AI</h1><p className="mt-1 text-sm text-zinc-500">Focused code review, without noise.</p></div>
+        <div className="app-panel p-6 sm:p-8">
+          <h2 className="text-xl font-semibold tracking-tight text-zinc-950">Sign in</h2>
+          <p className="mt-1 text-sm text-zinc-500">Continue to your review workspace.</p>
           <form onSubmit={handleSubmit(onSubmit)} noValidate data-testid="login-form">
             {errors.root && (
               <p className="text-red-600 text-sm mb-4" data-testid="login-error">
                 {errors.root.message}
               </p>
             )}
-            <div className="mb-4">
-              <label htmlFor="email" className="block text-sm font-medium text-gray-600 mb-1">
+            <div className="mb-4 mt-6">
+              <label htmlFor="email" className="field-label">
                 Email
               </label>
               <input
                 id="email"
                 type="email"
                 autoComplete="email"
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="field-input"
                 data-testid="login-email"
                 {...register('email', {
                   required: 'Email is required',
@@ -67,14 +68,14 @@ export function LoginPage() {
               )}
             </div>
             <div className="mb-6">
-              <label htmlFor="password" className="block text-sm font-medium text-gray-600 mb-1">
+              <label htmlFor="password" className="field-label">
                 Password
               </label>
               <input
                 id="password"
                 type="password"
                 autoComplete="current-password"
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="field-input"
                 data-testid="login-password"
                 {...register('password', { required: 'Password is required' })}
               />
@@ -85,15 +86,15 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={mutation.isPending}
-              className="w-full bg-indigo-600 text-white rounded py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+              className="btn-primary w-full"
               data-testid="login-submit"
             >
               {mutation.isPending ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
-          <p className="text-center text-sm text-gray-500 mt-4">
+          <p className="text-center text-sm text-zinc-500 mt-5">
             Don&apos;t have an account?{' '}
-            <Link to="/register" className="text-indigo-600 hover:underline">
+            <Link to="/register" className="font-medium text-blue-600 hover:text-blue-700">
               Register
             </Link>
           </p>
