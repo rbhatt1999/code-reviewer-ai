@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_18_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_19_011342) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
 
@@ -96,6 +96,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_18_120000) do
     t.datetime "finished_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "activity_log", default: [], null: false
     t.index ["project_id", "created_at"], name: "index_submissions_on_project_id_and_created_at"
     t.index ["project_id", "source_ref"], name: "idx_submissions_webhook_dedup", unique: true, where: "(kind = 4)"
     t.index ["project_id"], name: "index_submissions_on_project_id"

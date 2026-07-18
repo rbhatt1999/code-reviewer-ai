@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getConsumer } from '@cable/consumer';
+import type { SubmissionActivity } from '@api/schemas';
 
 interface SubmissionStatusEvent {
   submission_id: number;
   status: string;
-  progress?: number;
   issues_count?: number;
   mode?: string | null;
-  message?: string | null;
+  activity?: SubmissionActivity;
   updated_at?: string;
 }
 

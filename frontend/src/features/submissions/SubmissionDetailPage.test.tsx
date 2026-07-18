@@ -53,6 +53,7 @@ const mockSubmission = {
   issues_count: 2,
   finished_at: '2024-01-01T01:00:00.000Z',
   created_at: '2024-01-01T00:00:00.000Z',
+  activity_log: [],
 };
 
 const mockIssues = [
@@ -228,31 +229,53 @@ describe('SubmissionDetailPage', () => {
     expect(screen.queryByTestId('report-download-json')).not.toBeInTheDocument();
   });
 
-  it('does not render the review process card when review_log is empty', async () => {
+  it('does not render the activity feed when history is empty', async () => {
     renderWithProviders(<SubmissionDetailPage />, routeOptions);
 
     await waitFor(() => {
       expect(screen.getByTestId('review-summary')).toBeInTheDocument();
     });
-    expect(screen.queryByTestId('review-process')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('submission-activity')).not.toBeInTheDocument();
   });
 
-  it('renders the review process steps when review_log has entries', async () => {
-    mockedGetReview.mockResolvedValue({
-      ...mockReview,
-      review_log: [
-        { type: 'diff', file: 'app.rb', status: 'modified', additions: 2, deletions: 1 },
-        { type: 'read_file', file: 'app/models/user.rb', bytes: 200 },
-        { type: 'final_answer', issues_found: 2 },
+  it('shows saved work as done and newest action as active', async () => {
+    mockedGetSubmission.mockResolvedValue({
+      ...mockSubmission,
+      status: 'reviewing' as const,
+      activity_log: [
+        { type: 'stage', message: 'Running RuboCop (1/1)…', created_at: '2026-07-19T01:00:00Z' },
+        { type: 'read_file', message: 'AI read app/models/user.rb', file: 'app/models/user.rb', created_at: '2026-07-19T01:00:01Z' },
       ],
     });
 
     renderWithProviders(<SubmissionDetailPage />, routeOptions);
 
-    const section = await screen.findByTestId('review-process');
-    expect(section).toHaveTextContent('Changed in PR: app.rb');
-    expect(section).toHaveTextContent('Read for context: app/models/user.rb');
-    expect(section).toHaveTextContent('Finished — 2 issue(s) reported');
+    const section = await screen.findByTestId('submission-activity');
+    expect(section).toHaveTextContent('Running RuboCop (1/1)…');
+    expect(section).toHaveTextContent('AI read app/models/user.rb');
+    expect(screen.getByTestId('activity-current')).toHaveTextContent('AI read app/models/user.rb');
+    expect(screen.queryByTestId('submission-progress-pct')).not.toBeInTheDocument();
+  });
+
+  it('shows a live activity once when a WebSocket event arrives', async () => {
+    mockedGetSubmission.mockResolvedValue({ ...mockSubmission, status: 'reviewing' as const });
+    renderWithProviders(<SubmissionDetailPage />, routeOptions);
+
+    await screen.findByTestId('submission-detail-page');
+    const activity = {
+      type: 'read_file',
+      message: 'AI read app/services/reviewer.rb',
+      file: 'app/services/reviewer.rb',
+      created_at: '2026-07-19T01:00:02Z',
+    };
+
+    await act(async () => {
+      capturedReceived?.({ submission_id: 10, status: 'reviewing', activity });
+      capturedReceived?.({ submission_id: 10, status: 'reviewing', activity });
+    });
+
+    expect(await screen.findByTestId('activity-current')).toHaveTextContent(activity.message);
+    expect(screen.getAllByText(activity.message)).toHaveLength(1);
   });
 
   it('restricts file tabs to only files the AI reviewed, dropping untouched repo files', async () => {

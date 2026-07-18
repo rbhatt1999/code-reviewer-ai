@@ -28,7 +28,7 @@ module LLM
     IGNORED_DIR_PATTERN = %r{(^|/)(vendor|node_modules|dist|build|coverage|tmp|log|\.git)(/|$)}i.freeze
 
     def initialize(submission:, client: LLM::DeepseekClient.new, prompt_builder: LLM::PromptBuilder.new,
-                   on_progress: ->(_message) {})
+                   on_progress: ->(_activity) {})
       @submission     = submission
       @client         = client
       @prompt_builder = prompt_builder
@@ -46,6 +46,7 @@ module LLM
         { role: 'system', content: LLM::PromptBuilder::SYSTEM_PROMPT },
         { role: 'user', content: build_initial_prompt(tree, log) }
       ]
+      emit_initial_activity(log)
 
       run_agent_loop(messages, known_rels, t0, log)
     rescue StandardError => e
@@ -131,6 +132,7 @@ module LLM
         if parsed
           final_attrs = map_issues(parsed, known_rels)
           log << { type: 'final_answer', issues_found: final_attrs.size }
+          @on_progress.call(type: 'final_answer', message: "AI reported #{final_attrs.size} issue(s)")
           break
         end
 
@@ -139,9 +141,15 @@ module LLM
         if attempts >= MAX_JSON_ATTEMPTS
           degraded = true
           log << { type: 'degraded', reason: 'invalid_json' }
+          @on_progress.call(
+            type: 'degraded', message: 'AI response unavailable; continuing with static analysis results'
+          )
           break
         end
 
+        @on_progress.call(
+          type: 'retry', message: "AI retrying structured response (#{attempts + 1}/#{MAX_JSON_ATTEMPTS})"
+        )
         messages << assistant_message(message)
         messages << { role: 'user',
                       content: 'That was not valid JSON matching the schema. Respond with ONLY the JSON object.' }
@@ -151,6 +159,7 @@ module LLM
         attempts += 1
         degraded = true
         log << { type: 'degraded', reason: 'transport_error' }
+        @on_progress.call(type: 'degraded', message: 'AI connection failed; continuing with static analysis results')
         break
       end
 
@@ -205,7 +214,6 @@ module LLM
 
     def execute_tool_call(tool_call, known_rels, files_read, log)
       path_arg = extract_path_arg(tool_call)
-      @on_progress.call("Reading #{path_arg}…")
 
       if files_read >= MAX_LLM_FILES
         log << { type: 'read_file_error', file: path_arg, error: 'limit_reached' }
@@ -233,11 +241,23 @@ module LLM
       code = File.read(abs, encoding: 'UTF-8')
       numbered = code.lines.each_with_index.map { |line, idx| "#{format('%4d', idx + 1)}| #{line.chomp}" }.join("\n")
       log << { type: 'read_file', file: rel, bytes: size }
+      @on_progress.call(type: 'read_file', message: "AI read #{rel}", file: rel)
       ["## #{rel}\n#{numbered}", files_read + 1]
     rescue StandardError => e
       Rails.logger.warn("[LLM::ReviewService] read_file error (non-fatal): #{e.message}")
       log << { type: 'read_file_error', file: path_arg, error: 'read_error' }
       ['Error: could not read file.', files_read]
+    end
+
+    def emit_initial_activity(log)
+      diff_entries = log.select { |entry| entry[:type] == 'diff' }
+      if diff_entries.empty?
+        @on_progress.call(type: 'llm', message: 'AI reviewing source code')
+      else
+        diff_entries.each do |entry|
+          @on_progress.call(type: 'diff', message: "AI reviewing changed file #{entry[:file]}", file: entry[:file])
+        end
+      end
     end
 
     def extract_path_arg(tool_call)

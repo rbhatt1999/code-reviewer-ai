@@ -19,6 +19,14 @@ class Submission < ApplicationRecord
 
   delegate :count, to: :issues, prefix: true
 
+  def append_activity!(activity)
+    with_lock do
+      event = activity.stringify_keys.compact.merge('created_at' => Time.current.iso8601(6))
+      update!(activity_log: activity_log + [event])
+      event
+    end
+  end
+
   # AASM state machine — drives the asynchronous review pipeline.
   # Event names are intentionally distinct from the Rails enum's
   # value-setter bang methods (e.g. `completed!`, `failed!`) so the two

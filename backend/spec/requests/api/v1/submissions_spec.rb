@@ -24,6 +24,7 @@ RSpec.describe 'Api::V1::Submissions', type: :request do
       expect(body['submission']['language']).to eq('ruby')
       expect(body['submission']['kind']).to eq('single_file')
       expect(body['submission']).to have_key('issues_count')
+      expect(body['submission']['activity_log'].first).to include('message' => 'Queued for review')
     end
 
     it 'enqueues IngestJob for the created submission' do
@@ -100,6 +101,25 @@ RSpec.describe 'Api::V1::Submissions', type: :request do
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
       expect(body['submission']['id']).to eq(submission.id)
+    end
+
+    it 'returns persisted activity history' do
+      submission.update!(activity_log: [
+                           { 'type' => 'read_file', 'message' => 'AI read app/models/user.rb',
+                             'file' => 'app/models/user.rb', 'created_at' => '2026-07-19T01:00:00Z' }
+                         ])
+
+      get "/api/v1/submissions/#{submission.id}", headers: headers
+
+      activity = JSON.parse(response.body).dig('submission', 'activity_log')
+      expect(activity).to eq([
+                               {
+                                 'type' => 'read_file',
+                                 'message' => 'AI read app/models/user.rb',
+                                 'file' => 'app/models/user.rb',
+                                 'created_at' => '2026-07-19T01:00:00Z'
+                               }
+                             ])
     end
 
     it 'returns 404 for another users submission' do

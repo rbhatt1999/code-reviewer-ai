@@ -10,7 +10,7 @@ class LLMReviewJob < ApplicationJob
 
     result = LLM::ReviewService.new(
       submission: submission,
-      on_progress: ->(message) { broadcast_status(submission, message: message) }
+      on_progress: ->(activity) { broadcast_status(submission, **activity) }
     ).call # never raises on LLM-domain errors
     persist_issues(result.issues_attrs, submission)
     stash_llm_meta(submission, result)

@@ -108,6 +108,14 @@ RSpec.describe LLMReviewJob, type: :job do
       )
     end
 
+    it 'persists AI activity for reconnecting clients' do
+      described_class.perform_now(submission.id)
+
+      expect(submission.reload.activity_log).to include(
+        a_hash_including('type' => 'llm', 'message' => 'AI reviewing source code')
+      )
+    end
+
     it 'enqueues AggregateReportJob' do
       expect do
         described_class.perform_now(submission.id)

@@ -63,6 +63,7 @@ module Api
             language: project.language, size_bytes: 0, source_ref: ref, blob_path: '(pending)'
           )
           submission.update!(blob_path: store_meta(submission, project.repo_url, pr_number))
+          submission.append_activity!(type: 'stage', message: 'Queued for review')
           submission
         end
 

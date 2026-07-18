@@ -22,6 +22,14 @@ export const ProjectSchema = z.object({
 });
 export type Project = z.infer<typeof ProjectSchema>;
 
+export const SubmissionActivitySchema = z.object({
+  type: z.string(),
+  message: z.string(),
+  file: z.string().optional(),
+  created_at: z.string(),
+});
+export type SubmissionActivity = z.infer<typeof SubmissionActivitySchema>;
+
 export const SubmissionSchema = z.object({
   id: z.number(),
   project_id: z.number(),
@@ -34,6 +42,7 @@ export const SubmissionSchema = z.object({
   finished_at: z.string().nullable(),
   created_at: z.string(),
   error_message: z.string().nullable().optional(),
+  activity_log: z.array(SubmissionActivitySchema).default([]),
 });
 export type Submission = z.infer<typeof SubmissionSchema>;
 

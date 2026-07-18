@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getSubmission, getIssues, getReview, getSubmissionFiles, getFileContent } from '@api/submissions';
-import type { Issue, Review, ReviewLogEntry, SourceFile } from '@api/schemas';
+import type { Issue, Review, SourceFile, SubmissionActivity } from '@api/schemas';
 import { useSubmissionChannel } from '@hooks/useSubmissionChannel';
 import { CodeViewer } from './CodeViewer';
 import { ReportDownloadButtons } from './ReportDownloadButtons';
@@ -21,47 +21,24 @@ function reviewedPaths(review: Review | undefined): Set<string> {
   return paths;
 }
 
-function describeLogEntry(entry: ReviewLogEntry, index: number): string {
-  switch (entry.type) {
-    case 'diff':
-      return `Changed in PR: ${entry.file} (${entry.status ?? 'modified'}, +${entry.additions ?? 0}/-${entry.deletions ?? 0})`;
-    case 'read_file':
-      return `Read for context: ${entry.file}`;
-    case 'read_file_error':
-      return `Asked for ${entry.file} — ${entry.error ?? 'error'}`;
-    case 'final_answer':
-      return `Finished — ${entry.issues_found ?? 0} issue(s) reported`;
-    case 'degraded':
-      return `Degraded — ${entry.reason ?? 'unknown reason'}`;
-    default:
-      return `Step ${index + 1}: ${entry.type}`;
-  }
-}
-
-const LOG_ENTRY_STYLES: Record<string, string> = {
-  diff: 'text-blue-700 bg-blue-50',
-  read_file: 'text-gray-700 bg-gray-100',
-  read_file_error: 'text-yellow-700 bg-yellow-50',
-  final_answer: 'text-green-700 bg-green-50',
-  degraded: 'text-red-700 bg-red-50',
-};
-
-function ReviewProcess({ review }: { review: Review }) {
-  const log = review.review_log;
-  if (!log || log.length === 0) return null;
+function ActivityTimeline({ activities, active }: { activities: SubmissionActivity[]; active: boolean }) {
+  if (activities.length === 0 && !active) return null;
+  const currentIndex = active ? activities.length - 1 : -1;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-5 mb-6" data-testid="review-process">
-      <h2 className="text-base font-semibold text-gray-700 mb-3">Review process</h2>
+    <div className="bg-white border border-gray-200 rounded-lg p-5 mb-6" data-testid="submission-activity">
+      <h2 className="text-base font-semibold text-gray-700 mb-3" data-testid={active ? 'submission-in-progress' : undefined}>Review activity</h2>
       <ol className="space-y-1.5">
-        {log.map((entry, i) => (
-          <li key={i} className="flex items-start gap-2 text-sm">
-            <span
-              className={`text-xs px-2 py-0.5 rounded font-medium shrink-0 ${LOG_ENTRY_STYLES[entry.type] ?? 'text-gray-600 bg-gray-100'}`}
-            >
-              {entry.type}
-            </span>
-            <span className="text-gray-700 font-mono text-xs mt-0.5">{describeLogEntry(entry, i)}</span>
+        {activities.length === 0 && active && (
+          <li className="flex items-start gap-2 text-sm" data-testid="activity-current">
+            <span className="text-blue-600">●</span>
+            <span className="text-gray-700">Review is starting</span>
+          </li>
+        )}
+        {activities.map((entry, index) => (
+          <li key={entry.created_at} className="flex items-start gap-2 text-sm" data-testid={index === currentIndex ? 'activity-current' : undefined}>
+            <span className={index === currentIndex ? 'text-blue-600' : 'text-green-600'}>{index === currentIndex ? '●' : '✓'}</span>
+            <span className="text-gray-700">{entry.message}</span>
           </li>
         ))}
       </ol>
@@ -155,6 +132,12 @@ export function SubmissionDetailPage() {
     return <p className="text-red-600">Submission not found.</p>;
   }
 
+  const activities = [...submission.activity_log];
+  if (live?.activity && !activities.some((entry) => entry.created_at === live.activity?.created_at)) {
+    activities.push(live.activity);
+  }
+  const active = submission.status !== 'completed' && submission.status !== 'failed';
+
   return (
     <div data-testid="submission-detail-page">
       <Link
@@ -201,34 +184,7 @@ export function SubmissionDetailPage() {
         </div>
       )}
 
-      {review && <ReviewProcess review={review} />}
-
-      {submission.status !== 'completed' && submission.status !== 'failed' && (
-        <div
-          className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-blue-700 text-sm"
-          data-testid="submission-in-progress"
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span>
-              Review in progress — status: <strong>{submission.status}</strong>
-            </span>
-            <span className="text-xs text-blue-500" data-testid="submission-progress-pct">
-              {live?.progress ?? 0}%
-            </span>
-          </div>
-          <div className="w-full bg-blue-100 rounded-full h-1.5 mb-2 overflow-hidden">
-            <div
-              className="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
-              style={{ width: `${live?.progress ?? 0}%` }}
-            />
-          </div>
-          {live?.message && (
-            <p className="text-xs text-blue-600 italic" data-testid="submission-live-message">
-              {live.message}
-            </p>
-          )}
-        </div>
-      )}
+      <ActivityTimeline activities={activities} active={active} />
 
       {submission.status === 'failed' && (
         <div

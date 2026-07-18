@@ -42,6 +42,7 @@ module Api
           blob_path: '(pending)'
         )
         submission.update!(blob_path: store_blob(submission, content, filename))
+        submission.append_activity!(type: 'stage', message: 'Queued for review')
 
         IngestJob.perform_later(submission.id)
 
@@ -133,7 +134,8 @@ module Api
           issues_count: submission.issues_count,
           finished_at: submission.finished_at,
           created_at: submission.created_at,
-          error_message: submission.error_message
+          error_message: submission.error_message,
+          activity_log: submission.activity_log
         }
       end
 
