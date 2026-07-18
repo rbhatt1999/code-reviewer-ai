@@ -247,6 +247,8 @@ RSpec.describe IngestJob, type: :job do
       Rails.root.join(IngestJob::BLOB_ROOT, webhook_submission.id.to_s, 'cloned').to_s
     end
 
+    let(:pr_files_api_url) { 'https://api.github.com/repos/acme/widget/pulls/7/files' }
+
     before do
       allow_any_instance_of(Ast::Extractor).to receive(:call).and_return(nil)
 
@@ -266,6 +268,11 @@ RSpec.describe IngestJob, type: :job do
           ['', '', ok_status]
         end
       end
+
+      # Default: no PR files (empty diff) — individual examples override this.
+      stub_request(:get, pr_files_api_url).to_return(
+        status: 200, body: '[]', headers: { 'Content-Type' => 'application/json' }
+      )
     end
 
     after { FileUtils.rm_rf(meta_dir) }
@@ -286,6 +293,46 @@ RSpec.describe IngestJob, type: :job do
     it 'preserves source_ref unchanged (dedup key regression guard)' do
       described_class.perform_now(webhook_submission.id)
       expect(webhook_submission.reload.source_ref).to eq('PR#7@deadbeef')
+    end
+
+    describe 'PR diff stashing' do
+      let(:pr_diff_path) do
+        Rails.root.join(IngestJob::BLOB_ROOT, webhook_submission.id.to_s, 'pr_diff.json')
+      end
+
+      it 'writes pr_diff.json when GitHub returns changed files' do
+        stub_request(:get, pr_files_api_url).to_return(
+          status: 200,
+          body: [
+            { filename: 'app.rb', status: 'modified', additions: 1, deletions: 1,
+              patch: "@@ -1,1 +1,1 @@\n-old\n+new" }
+          ].to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+        described_class.perform_now(webhook_submission.id)
+
+        expect(File).to exist(pr_diff_path)
+        stashed = JSON.parse(File.read(pr_diff_path))
+        expect(stashed.first['filename']).to eq('app.rb')
+        expect(stashed.first['patch_numbered']).to include('+new')
+      end
+
+      it 'does not write pr_diff.json when GitHub returns no files' do
+        described_class.perform_now(webhook_submission.id)
+        expect(File).not_to exist(pr_diff_path)
+      end
+
+      it 'does not fail the submission when the GitHub API call errors' do
+        stub_request(:get, pr_files_api_url).to_raise(Faraday::ConnectionFailed.new('refused'))
+
+        expect do
+          described_class.perform_now(webhook_submission.id)
+        end.not_to raise_error
+
+        expect(webhook_submission.reload.status).to eq('analyzing')
+        expect(File).not_to exist(pr_diff_path)
+      end
     end
   end
 end

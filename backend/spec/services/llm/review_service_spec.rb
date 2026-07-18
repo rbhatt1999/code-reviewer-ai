@@ -264,5 +264,47 @@ RSpec.describe LLM::ReviewService, type: :service do
         end
       end
     end
+
+    context 'pr_diff.json present as a sibling of blob_path (PR webhook submission)' do
+      it 'seeds the diff-first prompt and still maps the final answer correctly' do
+        Dir.mktmpdir do |parent|
+          cloned_dir = File.join(parent, 'cloned')
+          FileUtils.mkdir_p(cloned_dir)
+          File.write(File.join(cloned_dir, 'app.rb'), "def foo\n  nil\nend\n")
+          File.write(File.join(parent, 'pr_diff.json'), [
+            { filename: 'app.rb', status: 'modified', additions: 1, deletions: 0,
+              patch_numbered: "@@ -1,1 +1,1 @@\n   1| def foo" }
+          ].to_json)
+
+          stub_deepseek_sequence(final_answer([
+            { file: 'app.rb', line_start: 1, line_end: 1, severity: 'low', category: 'style',
+              rule: 'from-diff', message: 'Found via diff-first prompt', suggestion: nil, confidence: 0.5 }
+          ]))
+
+          result = build_service(cloned_dir).call
+
+          expect(result.issues_attrs.size).to eq(1)
+          expect(WebMock).to have_requested(:post, chat_url)
+            .with(body: /Changed files in this pull request/)
+        end
+      end
+    end
+
+    context 'no pr_diff.json (non-PR submission)' do
+      it 'seeds the plain file-tree prompt, not the diff-first one' do
+        Dir.mktmpdir do |tmpdir|
+          File.write(File.join(tmpdir, 'app.rb'), "def foo; end\n")
+
+          stub_deepseek_sequence(final_answer([]))
+
+          build_service(tmpdir).call
+
+          expect(WebMock).to have_requested(:post, chat_url)
+            .with(body: /File tree/)
+          expect(WebMock).not_to have_requested(:post, chat_url)
+            .with(body: /Changed files in this pull request/)
+        end
+      end
+    end
   end
 end

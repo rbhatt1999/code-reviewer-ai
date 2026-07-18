@@ -82,4 +82,56 @@ RSpec.describe LLM::PromptBuilder do
       end
     end
   end
+
+  describe '#build_pr_initial' do
+    let(:file_tree) do
+      [
+        { rel: 'app.rb', bytes: 40, linter_issue_count: 1 },
+        { rel: 'app/other.rb', bytes: 80, linter_issue_count: 0 }
+      ]
+    end
+    let(:diff_files) do
+      [
+        { 'filename' => 'app.rb', 'status' => 'modified', 'additions' => 2, 'deletions' => 1,
+          'patch_numbered' => "@@ -1,1 +1,2 @@\n   1| def foo\n   2| +  nil" }
+      ]
+    end
+
+    subject(:result) do
+      builder.build_pr_initial(
+        language: 'ruby', diff_files: diff_files, file_tree: file_tree, linter_summary: linter_summary
+      )
+    end
+
+    context 'with no linter findings' do
+      let(:linter_summary) { [] }
+
+      it 'puts the changed-file diff first, headed by its filename and stats' do
+        expect(result).to include('Changed files in this pull request')
+        expect(result).to include('app.rb (modified, +2/-1)')
+        expect(result).to include('1| def foo')
+      end
+
+      it 'still includes the full file tree as secondary context' do
+        expect(result).to include('app.rb (40 bytes)')
+        expect(result).to include('app/other.rb (80 bytes)')
+      end
+
+      it 'includes the language' do
+        expect(result).to include('ruby')
+      end
+
+      it 'shows (none) for the static analyzer section' do
+        expect(result).to include('(none)')
+      end
+    end
+
+    context 'with linter findings' do
+      let(:linter_summary) { ['app.rb:L1-1 [Style/Foo] Use bar'] }
+
+      it 'includes the formatted finding' do
+        expect(result).to include('app.rb:L1-1 [Style/Foo] Use bar')
+      end
+    end
+  end
 end

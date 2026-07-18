@@ -42,9 +42,7 @@ module LLM
       known_rels = tree.map { |f| f[:rel] }.to_set
       messages = [
         { role: 'system', content: LLM::PromptBuilder::SYSTEM_PROMPT },
-        { role: 'user', content: @prompt_builder.build_initial(
-          language: @submission.language, file_tree: tree, linter_summary: linter_summary_lines
-        ) }
+        { role: 'user', content: build_initial_prompt(tree) }
       ]
 
       run_agent_loop(messages, known_rels, t0)
@@ -57,6 +55,39 @@ module LLM
 
     def empty_result(t0)
       Result.new(issues_attrs: [], attempts: 0, duration_ms: ms_since(t0), degraded: false)
+    end
+
+    # PR-based submissions (github_webhook) get a diff-first prompt — the
+    # changed files come first, full tree second — seeded from pr_diff.json
+    # that IngestJob stashed alongside the cloned repo. Everything else
+    # (git_url, zip, single_file, paste — or a PR whose diff fetch failed)
+    # falls back to the plain file-tree prompt.
+    def build_initial_prompt(tree)
+      diff_files = load_pr_diff
+      if diff_files.present?
+        @prompt_builder.build_pr_initial(
+          language: @submission.language, diff_files: diff_files, file_tree: tree,
+          linter_summary: linter_summary_lines
+        )
+      else
+        @prompt_builder.build_initial(
+          language: @submission.language, file_tree: tree, linter_summary: linter_summary_lines
+        )
+      end
+    end
+
+    def load_pr_diff
+      # blob_path always points one level inside the submission's own storage
+      # directory (".../<id>/cloned", ".../<id>/extracted", ".../<id>/app.rb",
+      # etc.) — pr_diff.json, when it exists, is a sibling of that directory.
+      dir  = File.dirname(@submission.blob_path)
+      path = File.join(dir, 'pr_diff.json')
+      return [] unless File.file?(path)
+
+      JSON.parse(File.read(path))
+    rescue StandardError => e
+      Rails.logger.warn("[LLM::ReviewService] could not load pr_diff.json (non-fatal): #{e.message}")
+      []
     end
 
     # rubocop:disable Metrics/MethodLength

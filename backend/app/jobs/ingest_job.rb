@@ -1,3 +1,5 @@
+require 'fileutils'
+
 class IngestJob < ApplicationJob
   include BroadcastsSubmissionStatus
 
@@ -123,6 +125,33 @@ class IngestJob < ApplicationJob
     ).call
 
     submission.update!(blob_path: dest_dir) # source_ref deliberately preserved (dedup key)
+    stash_pr_diff(submission, repo_url, pr_number)
+  end
+
+  # Fetches the PR's changed-file diffs from GitHub's public API and stashes
+  # them as JSON alongside the cloned tree, so LLM::ReviewService can seed the
+  # agent with "review these changes first" instead of the whole repo. Never
+  # fails the submission — if this errors (rate limit, private repo, network),
+  # the review just falls back to full-tree mode.
+  def stash_pr_diff(submission, repo_url, pr_number)
+    result = Github::PullRequestFiles.new(repo_url: repo_url, pr_number: pr_number).call
+    return if result.files.empty?
+
+    payload = result.files.map do |f|
+      {
+        filename: f.filename,
+        status: f.status,
+        additions: f.additions,
+        deletions: f.deletions,
+        patch_numbered: Diff::HunkFormatter.number(f.patch)
+      }
+    end
+
+    path = Rails.root.join(BLOB_ROOT, submission.id.to_s, 'pr_diff.json')
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, payload.to_json)
+  rescue StandardError => e
+    Rails.logger.warn("[IngestJob] PR diff fetch failed (non-fatal, falls back to full-tree review): #{e.message}")
   end
 
   # ── AST extraction (2F) ──────────────────────────────────────────────────
