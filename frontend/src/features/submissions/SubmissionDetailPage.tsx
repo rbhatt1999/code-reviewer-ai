@@ -159,7 +159,12 @@ export function SubmissionDetailPage() {
           className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-red-700 text-sm"
           data-testid="submission-failed"
         >
-          Review failed. Please try re-submitting.
+          <p>Review failed. Please try re-submitting.</p>
+          {submission.error_message && (
+            <p className="mt-2 font-mono text-xs break-all" data-testid="submission-error-message">
+              {submission.error_message}
+            </p>
+          )}
         </div>
       )}
 

@@ -33,6 +33,7 @@ export const SubmissionSchema = z.object({
   issues_count: z.number(),
   finished_at: z.string().nullable(),
   created_at: z.string(),
+  error_message: z.string().nullable().optional(),
 });
 export type Submission = z.infer<typeof SubmissionSchema>;
 

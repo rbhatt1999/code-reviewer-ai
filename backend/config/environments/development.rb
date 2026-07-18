@@ -66,4 +66,12 @@ Rails.application.configure do
 
   # Raise error when a before_action's only/except options reference missing actions
   config.action_controller.raise_on_missing_callback_actions = true
+
+  # Rails 7's HostAuthorization middleware blocks any Host header it doesn't
+  # recognize (default: localhost only). ngrok's free tier assigns a new
+  # random subdomain every time the tunnel restarts, so instead of adding
+  # each one by hand, allow any subdomain of ngrok's own domains — still
+  # scoped to ngrok, not a blanket "allow everything".
+  config.hosts << /.*\.ngrok-free\.(app|dev)/
+  config.hosts << /.*\.ngrok\.(io|app)/
 end

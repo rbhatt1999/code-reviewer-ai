@@ -132,7 +132,8 @@ module Api
           source_ref: submission.source_ref,
           issues_count: submission.issues_count,
           finished_at: submission.finished_at,
-          created_at: submission.created_at
+          created_at: submission.created_at,
+          error_message: submission.error_message
         }
       end
 
