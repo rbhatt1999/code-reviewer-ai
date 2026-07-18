@@ -3,11 +3,8 @@ require 'digest'
 require 'tmpdir'
 
 RSpec.describe LLM::ReviewService, type: :service do
-  let(:base_url)  { ENV.fetch('DEEPSEEK_BASE_URL', 'https://api.deepseek.com') }
-  let(:chat_url)  { "#{base_url}/chat/completions" }
-
-  # Shared factory objects — created per-example inside a Dir.mktmpdir block
-  # so each example gets its own tmp directory that is cleaned up after.
+  let(:base_url) { ENV.fetch('DEEPSEEK_BASE_URL', 'https://api.deepseek.com') }
+  let(:chat_url) { "#{base_url}/chat/completions" }
 
   def build_service(tmpdir, language: 'ruby')
     user       = create(:user)
@@ -21,47 +18,70 @@ RSpec.describe LLM::ReviewService, type: :service do
     described_class.new(submission: submission)
   end
 
-  def stub_deepseek(body)
-    stub_request(:post, chat_url)
-      .to_return(
-        status: 200,
-        body: body.to_json,
-        headers: { 'Content-Type' => 'application/json' }
-      )
+  # A "final answer" DeepSeek response — no tool_calls, just the strict-JSON
+  # issues payload as the message content.
+  def final_answer(issues)
+    {
+      choices: [{ message: { content: { issues: issues }.to_json } }]
+    }.to_json
+  end
+
+  # A "the model wants to read a file" DeepSeek response.
+  def tool_call_response(path, call_id: 'call_1')
+    {
+      choices: [{
+        message: {
+          content: nil,
+          tool_calls: [
+            { id: call_id, type: 'function', function: { name: 'read_file', arguments: { path: path }.to_json } }
+          ]
+        }
+      }]
+    }.to_json
+  end
+
+  def stub_deepseek_sequence(*bodies)
+    stub_request(:post, chat_url).to_return(bodies.map { |b| { status: 200, body: b,
+                                                                headers: { 'Content-Type' => 'application/json' } } })
   end
 
   describe '#call' do
-    context 'valid JSON with one issue' do
+    context 'no eligible files in the tree' do
+      it 'returns immediately with no issues and makes no HTTP call' do
+        Dir.mktmpdir do |tmpdir|
+          File.write(File.join(tmpdir, 'README.txt'), 'not a ruby file')
+
+          result = build_service(tmpdir).call
+
+          expect(result.issues_attrs).to eq([])
+          expect(result.attempts).to eq(0)
+          expect(result.degraded).to be(false)
+          expect(WebMock).not_to have_requested(:post, chat_url)
+        end
+      end
+    end
+
+    context 'model answers directly with one issue (no tool call)' do
       it 'returns one mapped issue_attr, degraded: false, attempts: 1' do
         Dir.mktmpdir do |tmpdir|
           File.write(File.join(tmpdir, 'app.rb'), "def foo\n  nil\nend\n")
 
-          stub_deepseek(
-            choices: [{ message: {
-              content: {
-                issues: [
-                  {
-                    line_start: 1, line_end: 1,
-                    severity: 'high', category: 'bug',
-                    rule: 'nil-check',
-                    message: 'Possible nil',
-                    suggestion: nil,
-                    confidence: 0.9
-                  }
-                ]
-              }.to_json
-            } }]
-          )
+          stub_deepseek_sequence(final_answer([
+            { file: 'app.rb', line_start: 1, line_end: 1, severity: 'high', category: 'bug',
+              rule: 'nil-check', message: 'Possible nil', suggestion: nil, confidence: 0.9 }
+          ]))
 
           result = build_service(tmpdir).call
 
           expect(result.issues_attrs.size).to eq(1)
           attr = result.issues_attrs.first
           expect(attr[:source]).to eq(:llm)
+          expect(attr[:file_path]).to eq('app.rb')
           expect(attr[:rule_id]).to eq('LLM/nil-check')
           expect(attr[:confidence]).to eq(0.9)
           expect(result.degraded).to be(false)
           expect(result.attempts).to eq(1)
+          expect(WebMock).to have_requested(:post, chat_url).times(1)
         end
       end
     end
@@ -71,22 +91,10 @@ RSpec.describe LLM::ReviewService, type: :service do
         Dir.mktmpdir do |tmpdir|
           File.write(File.join(tmpdir, 'app.rb'), "def foo\n  nil\nend\n")
 
-          stub_deepseek(
-            choices: [{ message: {
-              content: {
-                issues: [
-                  {
-                    line_start: 1, line_end: 1,
-                    severity: 'high', category: 'bug',
-                    rule: 'nil-check',
-                    message: 'Possible nil',
-                    suggestion: nil,
-                    confidence: 0.9
-                  }
-                ]
-              }.to_json
-            } }]
-          )
+          stub_deepseek_sequence(final_answer([
+            { file: 'app.rb', line_start: 1, line_end: 1, severity: 'high', category: 'bug',
+              rule: 'nil-check', message: 'Possible nil', suggestion: nil, confidence: 0.9 }
+          ]))
 
           result = build_service(tmpdir).call
 
@@ -96,17 +104,91 @@ RSpec.describe LLM::ReviewService, type: :service do
       end
     end
 
-    context 'malformed JSON on every attempt (3 retries)' do
+    context 'model requests a file via read_file before answering' do
+      it 'executes the tool call and maps the resulting issue' do
+        Dir.mktmpdir do |tmpdir|
+          File.write(File.join(tmpdir, 'app.rb'), "def foo\n  nil\nend\n")
+
+          stub_deepseek_sequence(
+            tool_call_response('app.rb'),
+            final_answer([
+              { file: 'app.rb', line_start: 2, line_end: 2, severity: 'medium', category: 'bug',
+                rule: 'nil-return', message: 'Returns nil implicitly', suggestion: nil, confidence: 0.7 }
+            ])
+          )
+
+          result = build_service(tmpdir).call
+
+          expect(result.issues_attrs.size).to eq(1)
+          expect(result.issues_attrs.first[:file_path]).to eq('app.rb')
+          expect(result.degraded).to be(false)
+          expect(WebMock).to have_requested(:post, chat_url).times(2)
+        end
+      end
+    end
+
+    context 'model requests a file over MAX_BYTES_PER_FILE via read_file' do
+      it 'returns an error to the model instead of the content, and produces no issue for it' do
+        Dir.mktmpdir do |tmpdir|
+          File.write(File.join(tmpdir, 'big.rb'), 'x' * (LLM::ReviewService::MAX_BYTES_PER_FILE + 1))
+
+          stub_deepseek_sequence(
+            tool_call_response('big.rb'),
+            final_answer([])
+          )
+
+          result = build_service(tmpdir).call
+
+          expect(result.issues_attrs).to eq([])
+          expect(result.degraded).to be(false)
+          expect(WebMock).to have_requested(:post, chat_url).times(2)
+        end
+      end
+    end
+
+    context 'model requests a file not in the tree' do
+      it 'returns an error to the model and does not raise' do
+        Dir.mktmpdir do |tmpdir|
+          File.write(File.join(tmpdir, 'app.rb'), "def foo; end\n")
+
+          stub_deepseek_sequence(
+            tool_call_response('../../etc/passwd'),
+            final_answer([])
+          )
+
+          result = build_service(tmpdir).call
+
+          expect(result.issues_attrs).to eq([])
+          expect(WebMock).to have_requested(:post, chat_url).times(2)
+        end
+      end
+    end
+
+    context 'final answer references a file never in the tree (hallucinated)' do
+      it 'drops the issue' do
+        Dir.mktmpdir do |tmpdir|
+          File.write(File.join(tmpdir, 'app.rb'), "def foo; end\n")
+
+          stub_deepseek_sequence(final_answer([
+            { file: 'nonexistent.rb', line_start: 1, line_end: 1, severity: 'high', category: 'bug',
+              rule: 'nil-check', message: 'Possible nil', suggestion: nil, confidence: 0.9 }
+          ]))
+
+          result = build_service(tmpdir).call
+
+          expect(result.issues_attrs).to eq([])
+        end
+      end
+    end
+
+    context 'malformed JSON on every final-answer attempt (3 retries)' do
       it 'returns empty issues_attrs, attempts == 3, degraded: true, raises nothing' do
         Dir.mktmpdir do |tmpdir|
           File.write(File.join(tmpdir, 'app.rb'), "def foo; end\n")
 
           stub_request(:post, chat_url)
-            .to_return(
-              status: 200,
-              body: { choices: [{ message: { content: 'not json' } }] }.to_json,
-              headers: { 'Content-Type' => 'application/json' }
-            )
+            .to_return(status: 200, body: { choices: [{ message: { content: 'not json' } }] }.to_json,
+                       headers: { 'Content-Type' => 'application/json' })
 
           result = build_service(tmpdir).call
 
@@ -122,8 +204,7 @@ RSpec.describe LLM::ReviewService, type: :service do
         Dir.mktmpdir do |tmpdir|
           File.write(File.join(tmpdir, 'app.rb'), "def foo; end\n")
 
-          stub_request(:post, chat_url)
-            .to_raise(Faraday::ConnectionFailed.new('refused'))
+          stub_request(:post, chat_url).to_raise(Faraday::ConnectionFailed.new('refused'))
 
           result = build_service(tmpdir).call
 
@@ -133,42 +214,15 @@ RSpec.describe LLM::ReviewService, type: :service do
       end
     end
 
-    context 'file over MAX_BYTES_PER_FILE' do
-      it 'skips the file, returns no issues and makes no HTTP call' do
-        Dir.mktmpdir do |tmpdir|
-          big_file = File.join(tmpdir, 'big.rb')
-          File.write(big_file, 'x' * (LLM::ReviewService::MAX_BYTES_PER_FILE + 1))
-
-          result = build_service(tmpdir).call
-
-          expect(result.issues_attrs).to eq([])
-          expect(WebMock).not_to have_requested(:post, chat_url)
-        end
-      end
-    end
-
     context 'out-of-range line_start (beyond file length)' do
       it 'drops the issue' do
         Dir.mktmpdir do |tmpdir|
-          # 3-line file
           File.write(File.join(tmpdir, 'app.rb'), "line1\nline2\nline3\n")
 
-          stub_deepseek(
-            choices: [{ message: {
-              content: {
-                issues: [
-                  {
-                    line_start: 9999, line_end: 9999,
-                    severity: 'high', category: 'bug',
-                    rule: 'nil-check',
-                    message: 'Out of range',
-                    suggestion: nil,
-                    confidence: 0.5
-                  }
-                ]
-              }.to_json
-            } }]
-          )
+          stub_deepseek_sequence(final_answer([
+            { file: 'app.rb', line_start: 9999, line_end: 9999, severity: 'high', category: 'bug',
+              rule: 'nil-check', message: 'Out of range', suggestion: nil, confidence: 0.5 }
+          ]))
 
           result = build_service(tmpdir).call
 
@@ -182,22 +236,10 @@ RSpec.describe LLM::ReviewService, type: :service do
         Dir.mktmpdir do |tmpdir|
           File.write(File.join(tmpdir, 'app.rb'), "def foo; end\n")
 
-          stub_deepseek(
-            choices: [{ message: {
-              content: {
-                issues: [
-                  {
-                    line_start: 1, line_end: 1,
-                    severity: 'low', category: 'code_quality',
-                    rule: 'test-rule',
-                    message: 'Test issue',
-                    suggestion: nil,
-                    confidence: 1.5
-                  }
-                ]
-              }.to_json
-            } }]
-          )
+          stub_deepseek_sequence(final_answer([
+            { file: 'app.rb', line_start: 1, line_end: 1, severity: 'low', category: 'code_quality',
+              rule: 'test-rule', message: 'Test issue', suggestion: nil, confidence: 1.5 }
+          ]))
 
           result = build_service(tmpdir).call
 
@@ -211,22 +253,10 @@ RSpec.describe LLM::ReviewService, type: :service do
         Dir.mktmpdir do |tmpdir|
           File.write(File.join(tmpdir, 'app.rb'), "def foo; end\n")
 
-          stub_deepseek(
-            choices: [{ message: {
-              content: {
-                issues: [
-                  {
-                    line_start: 1, line_end: 1,
-                    severity: 'low', category: 'code_quality',
-                    rule: 'test-rule',
-                    message: 'Test issue',
-                    suggestion: nil,
-                    confidence: 'high'
-                  }
-                ]
-              }.to_json
-            } }]
-          )
+          stub_deepseek_sequence(final_answer([
+            { file: 'app.rb', line_start: 1, line_end: 1, severity: 'low', category: 'code_quality',
+              rule: 'test-rule', message: 'Test issue', suggestion: nil, confidence: 'high' }
+          ]))
 
           result = build_service(tmpdir).call
 

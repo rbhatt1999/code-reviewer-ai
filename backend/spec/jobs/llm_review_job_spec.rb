@@ -31,6 +31,7 @@ RSpec.describe LLMReviewJob, type: :job do
     content = {
       'issues' => [
         {
+          'file' => 'sample.rb',
           'line_start' => 1,
           'line_end' => 1,
           'severity' => 'low',

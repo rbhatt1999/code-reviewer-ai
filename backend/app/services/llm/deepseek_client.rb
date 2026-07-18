@@ -1,7 +1,5 @@
 module LLM
   # DeepSeek chat-completions client (OpenAI-compatible API).
-  # Swapped in for LLM::OllamaClient as the default LLM::ReviewService
-  # client — same public interface (#chat), so no caller changes needed.
   class DeepseekClient
     def initialize(base_url: ENV.fetch('DEEPSEEK_BASE_URL', 'https://api.deepseek.com'),
                     model: ENV.fetch('DEEPSEEK_MODEL', 'deepseek-v4-flash'),
@@ -11,24 +9,26 @@ module LLM
       @api_key  = api_key
     end
 
-    # Returns the assistant message content STRING.
+    # Sends the full conversation so far (system/user/assistant/tool messages)
+    # and, optionally, an OpenAI-compatible `tools` function schema. Returns the
+    # assistant MESSAGE HASH as-is — {'content' => ..., 'tool_calls' => [...]} —
+    # rather than just the content string, so callers can drive an agentic
+    # tool-calling loop (needed by LLM::ReviewService's read_file flow).
     # Raises Llm::Errors::TransportError on transport failure or missing key.
-    def chat(system:, user:, num_ctx: 8192)
+    def complete(messages:, tools: nil)
       raise Errors::TransportError, 'DEEPSEEK_API_KEY is not set' if @api_key.blank?
+
+      body = { model: @model, temperature: 0.1, messages: messages }
+      body[:tools] = tools if tools.present?
 
       resp = connection.post('/chat/completions') do |req|
         req.headers['Content-Type']  = 'application/json'
         req.headers['Authorization'] = "Bearer #{@api_key}"
-        req.body = {
-          model: @model,
-          temperature: 0.1,
-          response_format: { type: 'json_object' },
-          messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
-        }.to_json
+        req.body = body.to_json
       end
       raise Errors::TransportError, "deepseek #{resp.status}" unless resp.success?
 
-      JSON.parse(resp.body).dig('choices', 0, 'message', 'content').to_s
+      JSON.parse(resp.body).dig('choices', 0, 'message') || {}
     rescue Faraday::Error => e
       raise Errors::TransportError, e.message
     end

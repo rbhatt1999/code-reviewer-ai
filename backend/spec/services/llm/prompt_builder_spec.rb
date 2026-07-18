@@ -15,42 +15,66 @@ RSpec.describe LLM::PromptBuilder do
         expect(described_class::SYSTEM_PROMPT).to include(cat)
       end
     end
+
+    it 'describes the read_file tool workflow' do
+      expect(described_class::SYSTEM_PROMPT).to include('read_file')
+    end
+
+    it 'requires a "file" key per issue in the schema' do
+      expect(described_class::SYSTEM_PROMPT).to include('"file"')
+    end
   end
 
-  describe '#build' do
-    let(:code) { "def hello\n  puts 'hi'\nend\n" }
+  describe 'TOOLS' do
+    it 'defines a read_file function tool' do
+      fn = described_class::TOOLS.first[:function]
+      expect(fn[:name]).to eq('read_file')
+      expect(fn[:parameters][:required]).to include('path')
+    end
+  end
 
-    context 'with no linter issues' do
-      subject(:result) do
-        builder.build(file_rel_path: 'app/models/user.rb', language: 'ruby', code: code, linter_issues: [])
-      end
+  describe '#build_initial' do
+    let(:file_tree) do
+      [
+        { rel: 'app/models/user.rb', bytes: 120, linter_issue_count: 0 },
+        { rel: 'app.rb', bytes: 40, linter_issue_count: 2 }
+      ]
+    end
 
-      it 'includes the file path' do
-        expect(result).to include('path: app/models/user.rb')
-      end
+    subject(:result) do
+      builder.build_initial(language: 'ruby', file_tree: file_tree, linter_summary: linter_summary)
+    end
+
+    context 'with no linter findings' do
+      let(:linter_summary) { [] }
 
       it 'includes the language' do
-        expect(result).to include('language: ruby')
+        expect(result).to include('ruby')
       end
 
-      it 'shows (none) for linter findings' do
+      it 'lists every file in the tree with its size' do
+        expect(result).to include('app/models/user.rb (120 bytes)')
+        expect(result).to include('app.rb (40 bytes)')
+      end
+
+      it 'flags files with linter issues' do
+        expect(result).to include('app.rb (40 bytes) [flagged: 2 issue(s)]')
+      end
+
+      it 'does not flag files with zero linter issues' do
+        expect(result).not_to include('app/models/user.rb (120 bytes) [flagged')
+      end
+
+      it 'shows (none) for the static analyzer section' do
         expect(result).to include('(none)')
-      end
-
-      it 'includes line-numbered code starting at 1' do
-        expect(result).to include('   1| def hello')
-        expect(result).to include('   2|   puts')
-        expect(result).to include('   3| end')
       end
     end
 
-    context 'with linter issues' do
-      subject(:result) { builder.build(file_rel_path: 'app.rb', language: 'ruby', code: code, linter_issues: [issue]) }
+    context 'with linter findings' do
+      let(:linter_summary) { ['app.rb:L2-2 [Style/Foo] Use bar'] }
 
-      let(:issue) { instance_double(Issue, line_start: 2, line_end: 2, rule_id: 'Style/Foo', message: 'Use bar') }
-
-      it 'formats linter issues as L<start>-<end> [<rule>] <message>' do
-        expect(result).to include('L2-2 [Style/Foo] Use bar')
+      it 'includes the formatted finding' do
+        expect(result).to include('app.rb:L2-2 [Style/Foo] Use bar')
       end
 
       it 'does not show (none)' do

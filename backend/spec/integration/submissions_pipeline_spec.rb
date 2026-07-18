@@ -97,6 +97,7 @@ RSpec.describe 'Submissions async pipeline (inline)', type: :request do
       {
         'issues' => [
           {
+            'file' => 'test_file.rb',
             'line_start' => 1,
             'line_end' => 1,
             'severity' => 'medium',

@@ -1,16 +1,30 @@
 require 'digest'
+require 'set'
 
 module LLM
+  # Agentic review: instead of dumping every file's full content into the
+  # prompt up front, the model is given a file TREE (paths + sizes + which
+  # files the static analyzer already flagged) and a `read_file` tool. It
+  # decides which files are worth a closer look and pulls them one at a time,
+  # the same way an agent like Claude Code or Codex explores a codebase,
+  # before producing its final list of issues. This bounds both prompt size
+  # and cost regardless of repo size, and lets the model prioritize
+  # linter-flagged files over blindly reading everything.
   class ReviewService
     Result = Struct.new(:issues_attrs, :attempts, :duration_ms, :degraded, keyword_init: true)
 
-    # Mirror Ast::Extractor::EXTENSION_MAP exactly (same keys/values)
     EXTENSION_MAP      = Ast::Extractor::EXTENSION_MAP
-    MAX_LLM_FILES      = ENV.fetch('LLM_MAX_FILES', 20).to_i
-    MAX_BYTES_PER_FILE = ENV.fetch('LLM_MAX_BYTES_PER_FILE', 24_000).to_i
-    MAX_JSON_ATTEMPTS  = 3
-    SEV_ALLOWED        = %w[info low medium high critical].freeze
-    CAT_ALLOWED        = %w[code_quality bug style security refactor].freeze
+    MAX_LLM_FILES       = ENV.fetch('LLM_MAX_FILES', 20).to_i        # cap on read_file calls per submission
+    MAX_BYTES_PER_FILE  = ENV.fetch('LLM_MAX_BYTES_PER_FILE', 24_000).to_i
+    MAX_JSON_ATTEMPTS   = 3                                          # final-answer JSON-parse retries
+    MAX_ROUNDS          = MAX_LLM_FILES + MAX_JSON_ATTEMPTS + 4      # hard cap on total round-trips
+    SEV_ALLOWED         = %w[info low medium high critical].freeze
+    CAT_ALLOWED         = %w[code_quality bug style security refactor].freeze
+
+    # Build-artifact / dependency directories are never worth putting in the
+    # tree at all — excluding them keeps the tree itself small regardless of
+    # what the model decides to read.
+    IGNORED_DIR_PATTERN = %r{(^|/)(vendor|node_modules|dist|build|coverage|tmp|log|\.git)(/|$)}i.freeze
 
     def initialize(submission:, client: LLM::DeepseekClient.new, prompt_builder: LLM::PromptBuilder.new,
                    on_progress: ->(_message) {})
@@ -21,75 +35,181 @@ module LLM
     end
 
     def call
-      t0_mono = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      all_attrs = []
-      total_attempts = 0
-      any_degraded = false
+      t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      tree = file_tree
+      return empty_result(t0) if tree.empty?
 
-      files = source_files.first(MAX_LLM_FILES)
-      files.each_with_index do |abs_path, idx|
-        next if File.size(abs_path) > MAX_BYTES_PER_FILE
+      known_rels = tree.map { |f| f[:rel] }.to_set
+      messages = [
+        { role: 'system', content: LLM::PromptBuilder::SYSTEM_PROMPT },
+        { role: 'user', content: @prompt_builder.build_initial(
+          language: @submission.language, file_tree: tree, linter_summary: linter_summary_lines
+        ) }
+      ]
 
-        rel  = relative_path(abs_path)
-        @on_progress.call("Reviewing #{rel} with DeepSeek (#{idx + 1}/#{files.size})…")
-        code = File.read(abs_path, encoding: 'UTF-8')
-        attrs, file_attempts, file_degraded = review_one_file(rel, code)
-        all_attrs.concat(attrs)
-        total_attempts += file_attempts
-        any_degraded ||= file_degraded
-      rescue StandardError => e
-        Rails.logger.warn("[LLM::ReviewService] file error (non-fatal): #{e.class} — #{e.message}")
-        any_degraded = true
-      end
-
-      Result.new(
-        issues_attrs: all_attrs,
-        attempts: total_attempts,
-        duration_ms: ms_since(t0_mono),
-        degraded: any_degraded
-      )
+      run_agent_loop(messages, known_rels, t0)
+    rescue StandardError => e
+      Rails.logger.warn("[LLM::ReviewService] unexpected error (non-fatal): #{e.class} — #{e.message}")
+      Result.new(issues_attrs: [], attempts: 1, duration_ms: ms_since(t0), degraded: true)
     end
 
     private
 
-    def review_one_file(rel, code)
-      system_prompt = LLM::PromptBuilder::SYSTEM_PROMPT
-      user_prompt   = @prompt_builder.build(
-        file_rel_path: rel,
-        language: @submission.language,
-        code: code,
-        linter_issues: linter_issues_for(rel)
-      )
+    def empty_result(t0)
+      Result.new(issues_attrs: [], attempts: 0, duration_ms: ms_since(t0), degraded: false)
+    end
 
-      attempts = 0
+    # rubocop:disable Metrics/MethodLength
+    def run_agent_loop(messages, known_rels, t0)
+      attempts    = 0
+      files_read  = 0
+      degraded    = false
+      final_attrs = []
 
-      loop do
-        attempts += 1
-        begin
-          raw    = @client.chat(system: system_prompt, user: user_prompt)
-          parsed = JSON.parse(raw)
-          return [map_issues(parsed, rel, code), attempts, false] if valid_shape?(parsed)
-        rescue LLM::Errors::TransportError => e
-          Rails.logger.warn("[LLM::ReviewService] transport error (non-fatal): #{e.message}")
-          return [[], attempts, true]
-        rescue JSON::ParserError
-          # fall through to retry
+      MAX_ROUNDS.times do
+        offer_tools = files_read < MAX_LLM_FILES
+        message = @client.complete(messages: messages, tools: offer_tools ? LLM::PromptBuilder::TOOLS : nil)
+
+        tool_calls = message['tool_calls']
+        if tool_calls.present?
+          messages << { role: 'assistant', content: message['content'], tool_calls: tool_calls }
+          tool_calls.each do |tool_call|
+            text, files_read = execute_tool_call(tool_call, known_rels, files_read)
+            messages << { role: 'tool', tool_call_id: tool_call['id'], content: text }
+          end
+          next
         end
 
-        return [[], attempts, true] if attempts >= MAX_JSON_ATTEMPTS
+        attempts += 1
+        parsed = safe_parse(message['content'])
+        if parsed
+          final_attrs = map_issues(parsed, known_rels)
+          break
+        end
+
+        if attempts >= MAX_JSON_ATTEMPTS
+          degraded = true
+          break
+        end
+
+        messages << { role: 'assistant', content: message['content'].to_s }
+        messages << { role: 'user',
+                      content: 'That was not valid JSON matching the schema. Respond with ONLY the JSON object.' }
+      rescue LLM::Errors::TransportError => e
+        Rails.logger.warn("[LLM::ReviewService] transport error (non-fatal): #{e.message}")
+        attempts += 1
+        degraded = true
+        break
+      end
+
+      Result.new(
+        issues_attrs: final_attrs,
+        attempts: [attempts, 1].max,
+        duration_ms: ms_since(t0),
+        degraded: degraded || (final_attrs.empty? && attempts.zero?)
+      )
+    end
+    # rubocop:enable Metrics/MethodLength
+
+    # --- file tree (paths + sizes only — NOT contents) --------------------
+
+    def file_tree
+      root = @submission.blob_path
+      return single_file_tree(root) unless File.directory?(root)
+
+      exts = Array(EXTENSION_MAP[@submission.language])
+      Dir.glob('**/*', base: root).filter_map do |rel|
+        next if rel.match?(IGNORED_DIR_PATTERN)
+
+        abs = File.join(root, rel)
+        next unless File.file?(abs) && exts.include?(File.extname(rel).downcase)
+
+        { rel: rel, bytes: File.size(abs), linter_issue_count: linter_issue_count_for(rel) }
+      end.sort_by { |f| f[:rel] }
+    end
+
+    def single_file_tree(root)
+      return [] unless File.file?(root)
+
+      rel = File.basename(root)
+      [{ rel: rel, bytes: File.size(root), linter_issue_count: linter_issue_count_for(rel) }]
+    end
+
+    def linter_issue_count_for(rel)
+      @linter_counts ||= @submission.issues.where(source: :linter).each_with_object(Hash.new(0)) do |issue, counts|
+        counts[canon_path(issue.file_path)] += 1
+      end
+      @linter_counts[rel] || 0
+    end
+
+    def linter_summary_lines
+      @submission.issues.where(source: :linter).map do |i|
+        "#{canon_path(i.file_path)}:L#{i.line_start}-#{i.line_end} [#{i.rule_id}] #{i.message}"
       end
     end
 
-    def valid_shape?(parsed)
-      parsed.is_a?(Hash) && parsed['issues'].is_a?(Array)
+    # --- tool execution ------------------------------------------------------
+
+    def execute_tool_call(tool_call, known_rels, files_read)
+      path_arg = extract_path_arg(tool_call)
+      @on_progress.call("Reading #{path_arg}…")
+
+      return ["Error: no more files can be read (limit of #{MAX_LLM_FILES} reached).", files_read] if files_read >= MAX_LLM_FILES
+
+      rel = known_rels.include?(path_arg) ? path_arg : nil
+      return ["Error: '#{path_arg}' is not a file in the file tree.", files_read] unless rel
+
+      abs = resolve_abs(rel)
+      return ["Error: file not found.", files_read] unless abs && File.file?(abs)
+
+      size = File.size(abs)
+      if size > MAX_BYTES_PER_FILE
+        return ["Error: file is #{size} bytes, exceeds the #{MAX_BYTES_PER_FILE}-byte review limit.", files_read]
+      end
+
+      code = File.read(abs, encoding: 'UTF-8')
+      numbered = code.lines.each_with_index.map { |line, idx| "#{format('%4d', idx + 1)}| #{line.chomp}" }.join("\n")
+      ["## #{rel}\n#{numbered}", files_read + 1]
+    rescue StandardError => e
+      Rails.logger.warn("[LLM::ReviewService] read_file error (non-fatal): #{e.message}")
+      ['Error: could not read file.', files_read]
     end
 
-    def map_issues(parsed, rel, code)
-      line_count = code.lines.size
-      parsed['issues'].filter_map { |raw| build_issue_attr(raw, rel, line_count) }
+    def extract_path_arg(tool_call)
+      raw = tool_call.dig('function', 'arguments')
+      JSON.parse(raw.to_s)['path'].to_s.strip.sub(%r{\A\./}, '')
+    rescue JSON::ParserError
+      raw.to_s
     end
 
-    def build_issue_attr(raw, rel, line_count)
+    def resolve_abs(rel)
+      root = @submission.blob_path
+      return root if !File.directory?(root) && File.basename(root) == rel
+
+      File.join(root, rel)
+    end
+
+    # --- final answer parsing/mapping ---------------------------------------
+
+    def safe_parse(content)
+      parsed = JSON.parse(content.to_s)
+      parsed.is_a?(Hash) && parsed['issues'].is_a?(Array) ? parsed : nil
+    rescue JSON::ParserError
+      nil
+    end
+
+    def map_issues(parsed, known_rels)
+      parsed['issues'].filter_map { |raw| build_issue_attr(raw, known_rels) }
+    end
+
+    def build_issue_attr(raw, known_rels)
+      rel = raw['file'].to_s.strip
+      return nil unless known_rels.include?(rel)
+
+      abs = resolve_abs(rel)
+      return nil unless abs && File.file?(abs)
+
+      line_count = File.read(abs, encoding: 'UTF-8').lines.size
       line_start = raw['line_start'].to_i
       return nil if line_start < 1 || line_start > line_count
 
@@ -122,30 +242,7 @@ module LLM
       val.is_a?(Numeric) ? val.to_f.clamp(0.0, 1.0) : nil
     end
 
-    # Mirror Ast::Extractor#collect_source_files
-    def source_files
-      root = @submission.blob_path
-      return [root] unless File.directory?(root)
-
-      exts = Array(EXTENSION_MAP[@submission.language])
-      Dir.glob('**/*', base: root).filter_map do |rel|
-        abs = File.join(root, rel)
-        abs if File.file?(abs) && exts.include?(File.extname(rel).downcase)
-      end.sort
-    end
-
-    # Mirror Ast::Extractor#relative_path
-    def relative_path(abs_path)
-      root = @submission.blob_path
-      return File.basename(abs_path) unless File.directory?(root)
-
-      Pathname.new(abs_path).relative_path_from(Pathname.new(root)).to_s
-    end
-
-    def linter_issues_for(rel)
-      @submission.issues.where(source: :linter).select { |i| canon_path(i.file_path) == rel }
-    end
-
+    # Mirror Ast::Extractor#relative_path's rooting logic
     def canon_path(path)
       return File.basename(path) unless File.directory?(@submission.blob_path)
 
@@ -154,8 +251,8 @@ module LLM
       abs.start_with?(root + File::SEPARATOR) ? abs[(root.size + 1)..] : File.basename(path)
     end
 
-    def ms_since(t0_mono)
-      ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0_mono) * 1000).round
+    def ms_since(t0)
+      ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round
     end
   end
 end
