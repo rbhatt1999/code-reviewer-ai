@@ -12,7 +12,7 @@ module LLM
     SEV_ALLOWED        = %w[info low medium high critical].freeze
     CAT_ALLOWED        = %w[code_quality bug style security refactor].freeze
 
-    def initialize(submission:, client: LLM::OllamaClient.new, prompt_builder: LLM::PromptBuilder.new)
+    def initialize(submission:, client: LLM::DeepseekClient.new, prompt_builder: LLM::PromptBuilder.new)
       @submission     = submission
       @client         = client
       @prompt_builder = prompt_builder

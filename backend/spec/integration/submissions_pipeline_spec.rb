@@ -1,14 +1,12 @@
 require 'rails_helper'
 
 # End-to-end pipeline test: HTTP POST → IngestJob → StaticAnalysisJob →
-# LLMReviewJob (Ollama stubbed via WebMock) → AggregateReportJob → completed.
+# LLMReviewJob (DeepSeek stubbed via WebMock) → AggregateReportJob → completed.
 # Sidekiq::Testing.inline! makes perform_later run synchronously so the whole
 # chain executes inside the request.
 #
-# WebMock note: rails_helper sets allow_localhost: true, which means an
-# unstubbed call to localhost SUCCEEDS (hits real Ollama if running). We
-# therefore add an EXPLICIT stub pinned to the Ollama chat endpoint so tests
-# are deterministic whether or not a real Ollama server is present.
+# WebMock note: an EXPLICIT stub is pinned to the DeepSeek chat-completions
+# endpoint so tests are deterministic and never hit the real cloud API.
 RSpec.describe 'Submissions async pipeline (inline)', type: :request do
   include ActiveJob::TestHelper
 
@@ -35,7 +33,7 @@ RSpec.describe 'Submissions async pipeline (inline)', type: :request do
     }.to_json
   end
 
-  let(:ollama_url) { "#{ENV.fetch('OLLAMA_BASE_URL', 'http://localhost:11434')}/api/chat" }
+  let(:deepseek_url) { "#{ENV.fetch('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')}/chat/completions" }
 
   # ── linter_only context (LLM returns zero issues) ─────────────────────────
   context 'when LLM returns no issues (linter_only path)' do
@@ -43,13 +41,13 @@ RSpec.describe 'Submissions async pipeline (inline)', type: :request do
       status_double = instance_double(Process::Status, exitstatus: 1)
       allow(Open3).to receive(:capture3).and_return([rubocop_one_offense_json, '', status_double])
 
-      # Stub Ollama so tests are deterministic without a real server.
-      # Body matches OllamaClient#chat: JSON.parse(resp.body).dig('message','content')
+      # Stub DeepSeek so tests are deterministic without hitting the real cloud API.
+      # Body matches DeepseekClient#chat: JSON.parse(resp.body).dig('choices',0,'message','content')
       # → '{"issues":[]}' → valid_shape? true → zero LLM issues persisted.
-      stub_request(:post, ollama_url)
+      stub_request(:post, deepseek_url)
         .to_return(
           status: 200,
-          body: { message: { content: '{"issues":[]}' } }.to_json,
+          body: { choices: [{ message: { content: '{"issues":[]}' } }] }.to_json,
           headers: { 'Content-Type' => 'application/json' }
         )
     end
@@ -116,10 +114,10 @@ RSpec.describe 'Submissions async pipeline (inline)', type: :request do
       status_double = instance_double(Process::Status, exitstatus: 1)
       allow(Open3).to receive(:capture3).and_return([rubocop_one_offense_json, '', status_double])
 
-      stub_request(:post, ollama_url)
+      stub_request(:post, deepseek_url)
         .to_return(
           status: 200,
-          body: { message: { content: llm_issue_json } }.to_json,
+          body: { choices: [{ message: { content: llm_issue_json } }] }.to_json,
           headers: { 'Content-Type' => 'application/json' }
         )
     end

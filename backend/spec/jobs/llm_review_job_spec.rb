@@ -3,7 +3,7 @@ require 'rails_helper'
 RSpec.describe LLMReviewJob, type: :job do
   include ActiveJob::TestHelper
 
-  let(:ollama_url) { "#{ENV.fetch('OLLAMA_BASE_URL', 'http://localhost:11434')}/api/chat" }
+  let(:deepseek_url) { "#{ENV.fetch('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')}/chat/completions" }
   let(:user)    { create(:user) }
   let(:project) { create(:project, user: user) }
   let(:submission) do
@@ -26,8 +26,8 @@ RSpec.describe LLMReviewJob, type: :job do
 
   after { FileUtils.rm_rf(tmpdir) }
 
-  # Builds a valid Ollama HTTP response body for one issue.
-  def ollama_body_with_one_issue
+  # Builds a valid DeepSeek HTTP response body for one issue.
+  def deepseek_body_with_one_issue
     content = {
       'issues' => [
         {
@@ -42,15 +42,15 @@ RSpec.describe LLMReviewJob, type: :job do
         }
       ]
     }.to_json
-    # OllamaClient does: JSON.parse(body).dig('message', 'content').to_s
+    # DeepseekClient does: JSON.parse(body).dig('choices', 0, 'message', 'content').to_s
     # ReviewService does: JSON.parse(that_string)
     # So content must be a JSON *string*, not a Hash.
-    { message: { content: content } }.to_json
+    { choices: [{ message: { content: content } }] }.to_json
   end
 
   # Builds a body whose content is not valid JSON (triggers MAX_JSON_ATTEMPTS retries).
-  def ollama_body_malformed
-    { message: { content: 'not-json' } }.to_json
+  def deepseek_body_malformed
+    { choices: [{ message: { content: 'not-json' } }] }.to_json
   end
 
   # -------------------------------------------------------------------------
@@ -80,8 +80,8 @@ RSpec.describe LLMReviewJob, type: :job do
   # -------------------------------------------------------------------------
   describe 'happy path — LLM returns one issue' do
     before do
-      stub_request(:post, ollama_url)
-        .to_return(status: 200, body: ollama_body_with_one_issue,
+      stub_request(:post, deepseek_url)
+        .to_return(status: 200, body: deepseek_body_with_one_issue,
                    headers: { 'Content-Type' => 'application/json' })
     end
 
@@ -112,8 +112,8 @@ RSpec.describe LLMReviewJob, type: :job do
   # -------------------------------------------------------------------------
   describe 'graceful degradation — malformed JSON response' do
     before do
-      stub_request(:post, ollama_url)
-        .to_return(status: 200, body: ollama_body_malformed,
+      stub_request(:post, deepseek_url)
+        .to_return(status: 200, body: deepseek_body_malformed,
                    headers: { 'Content-Type' => 'application/json' })
     end
 
@@ -143,7 +143,7 @@ RSpec.describe LLMReviewJob, type: :job do
   # -------------------------------------------------------------------------
   describe 'graceful degradation — transport error (503)' do
     before do
-      stub_request(:post, ollama_url)
+      stub_request(:post, deepseek_url)
         .to_return(status: 503, body: 'Service Unavailable',
                    headers: { 'Content-Type' => 'text/plain' })
     end
@@ -164,8 +164,8 @@ RSpec.describe LLMReviewJob, type: :job do
   # -------------------------------------------------------------------------
   describe 'exception path — finish_review! raises' do
     before do
-      stub_request(:post, ollama_url)
-        .to_return(status: 200, body: ollama_body_with_one_issue,
+      stub_request(:post, deepseek_url)
+        .to_return(status: 200, body: deepseek_body_with_one_issue,
                    headers: { 'Content-Type' => 'application/json' })
 
       # Ensure the job retrieves our submission instance so we can stub it.

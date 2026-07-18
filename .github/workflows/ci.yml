@@ -15,6 +15,9 @@ jobs:
       JWT_SECRET_KEY: ci-test-jwt-secret-not-real-but-non-empty
       OLLAMA_BASE_URL: http://localhost:11434
       OLLAMA_MODEL: qwen2.5-coder:7b-instruct-q4_K_M
+      DEEPSEEK_BASE_URL: https://api.deepseek.com
+      DEEPSEEK_MODEL: deepseek-v4-flash
+      DEEPSEEK_API_KEY: ci-test-key-not-real-but-non-empty
     services:
       postgres:
         image: postgres:15

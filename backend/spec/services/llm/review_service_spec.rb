@@ -3,8 +3,8 @@ require 'digest'
 require 'tmpdir'
 
 RSpec.describe LLM::ReviewService, type: :service do
-  let(:base_url)  { ENV.fetch('OLLAMA_BASE_URL', 'http://localhost:11434') }
-  let(:chat_url)  { "#{base_url}/api/chat" }
+  let(:base_url)  { ENV.fetch('DEEPSEEK_BASE_URL', 'https://api.deepseek.com') }
+  let(:chat_url)  { "#{base_url}/chat/completions" }
 
   # Shared factory objects — created per-example inside a Dir.mktmpdir block
   # so each example gets its own tmp directory that is cleaned up after.
@@ -21,7 +21,7 @@ RSpec.describe LLM::ReviewService, type: :service do
     described_class.new(submission: submission)
   end
 
-  def stub_ollama(body)
+  def stub_deepseek(body)
     stub_request(:post, chat_url)
       .to_return(
         status: 200,
@@ -36,8 +36,8 @@ RSpec.describe LLM::ReviewService, type: :service do
         Dir.mktmpdir do |tmpdir|
           File.write(File.join(tmpdir, 'app.rb'), "def foo\n  nil\nend\n")
 
-          stub_ollama(
-            message: {
+          stub_deepseek(
+            choices: [{ message: {
               content: {
                 issues: [
                   {
@@ -50,7 +50,7 @@ RSpec.describe LLM::ReviewService, type: :service do
                   }
                 ]
               }.to_json
-            }
+            } }]
           )
 
           result = build_service(tmpdir).call
@@ -71,8 +71,8 @@ RSpec.describe LLM::ReviewService, type: :service do
         Dir.mktmpdir do |tmpdir|
           File.write(File.join(tmpdir, 'app.rb'), "def foo\n  nil\nend\n")
 
-          stub_ollama(
-            message: {
+          stub_deepseek(
+            choices: [{ message: {
               content: {
                 issues: [
                   {
@@ -85,7 +85,7 @@ RSpec.describe LLM::ReviewService, type: :service do
                   }
                 ]
               }.to_json
-            }
+            } }]
           )
 
           result = build_service(tmpdir).call
@@ -104,7 +104,7 @@ RSpec.describe LLM::ReviewService, type: :service do
           stub_request(:post, chat_url)
             .to_return(
               status: 200,
-              body: { message: { content: 'not json' } }.to_json,
+              body: { choices: [{ message: { content: 'not json' } }] }.to_json,
               headers: { 'Content-Type' => 'application/json' }
             )
 
@@ -153,8 +153,8 @@ RSpec.describe LLM::ReviewService, type: :service do
           # 3-line file
           File.write(File.join(tmpdir, 'app.rb'), "line1\nline2\nline3\n")
 
-          stub_ollama(
-            message: {
+          stub_deepseek(
+            choices: [{ message: {
               content: {
                 issues: [
                   {
@@ -167,7 +167,7 @@ RSpec.describe LLM::ReviewService, type: :service do
                   }
                 ]
               }.to_json
-            }
+            } }]
           )
 
           result = build_service(tmpdir).call
@@ -182,8 +182,8 @@ RSpec.describe LLM::ReviewService, type: :service do
         Dir.mktmpdir do |tmpdir|
           File.write(File.join(tmpdir, 'app.rb'), "def foo; end\n")
 
-          stub_ollama(
-            message: {
+          stub_deepseek(
+            choices: [{ message: {
               content: {
                 issues: [
                   {
@@ -196,7 +196,7 @@ RSpec.describe LLM::ReviewService, type: :service do
                   }
                 ]
               }.to_json
-            }
+            } }]
           )
 
           result = build_service(tmpdir).call
@@ -211,8 +211,8 @@ RSpec.describe LLM::ReviewService, type: :service do
         Dir.mktmpdir do |tmpdir|
           File.write(File.join(tmpdir, 'app.rb'), "def foo; end\n")
 
-          stub_ollama(
-            message: {
+          stub_deepseek(
+            choices: [{ message: {
               content: {
                 issues: [
                   {
@@ -225,7 +225,7 @@ RSpec.describe LLM::ReviewService, type: :service do
                   }
                 ]
               }.to_json
-            }
+            } }]
           )
 
           result = build_service(tmpdir).call
