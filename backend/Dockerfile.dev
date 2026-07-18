@@ -1,0 +1,38 @@
+# Development image used by docker-compose.yml so `docker compose up` brings up
+# the entire stack (Postgres, Redis, Rails API, Sidekiq worker, React SPA) with
+# a single command — no local Ruby/Node toolchain required.
+#
+# This is intentionally separate from Dockerfile (the production image): running
+# in RAILS_ENV=production would trip config.force_ssl=true and require a real
+# master key / TLS termination, which is the wrong shape for a local demo.
+FROM ruby:3.2.5-slim
+
+WORKDIR /rails
+
+ENV RAILS_ENV=development \
+    BUNDLE_PATH=/usr/local/bundle
+
+# build-essential/libpq-dev: native gem compilation (pg, etc.)
+# postgresql-client: `pg_isready`/psql, useful for debugging
+# chromium/nodejs/npm: Grover (PDF report export) drives headless Chromium via Puppeteer
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y \
+      build-essential git libpq-dev pkg-config curl postgresql-client \
+      chromium nodejs npm && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY Gemfile Gemfile.lock ./
+RUN gem install bundler -v 2.6.6 && bundle install
+
+ENV GROVER_NO_SANDBOX=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+    PUPPETEER_SKIP_DOWNLOAD=true
+RUN npm install puppeteer-core@^22
+
+COPY . .
+
+EXPOSE 3000
+
+# db:prepare creates the DB (if missing) and runs pending migrations; db:seed is
+# idempotent (find_or_create_by!) so it's safe to run on every container start.
+CMD ["bash", "-c", "bin/rails db:prepare && bin/rails db:seed && bin/rails server -b 0.0.0.0 -p 3000"]

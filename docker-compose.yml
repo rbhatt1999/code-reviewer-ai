@@ -1,8 +1,9 @@
 name: code-reviewer-ai
 
-# Increment 1 brings up the data stores only; the Rails API and the React SPA
-# run locally during development. Application, worker, and Ollama services are
-# added in later increments.
+# `docker compose up` brings up the ENTIRE stack with one command:
+# Postgres, Redis, the Rails API, a Sidekiq worker, and the React SPA.
+# The Rails API talks to DeepSeek (cloud LLM) — see backend/.env — so no
+# local Ollama server is required.
 services:
   postgres:
     image: postgres:15-alpine
@@ -31,6 +32,54 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    image: code-reviewer-ai-backend:dev
+    env_file: ./backend/.env
+    environment:
+      # Override host/URL so the container reaches services by their
+      # compose network name rather than the host-oriented values in .env.
+      DATABASE_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  sidekiq:
+    image: code-reviewer-ai-backend:dev
+    env_file: ./backend/.env
+    environment:
+      DATABASE_HOST: postgres
+      REDIS_URL: redis://redis:6379/0
+    command: bundle exec sidekiq -C config/sidekiq.yml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    environment:
+      # These are consumed by the browser (host machine), so they point at
+      # the published host ports, not container-internal service names.
+      VITE_API_BASE_URL: http://localhost:3000/api/v1
+      VITE_WS_BASE_URL: ws://localhost:3000/cable
+    depends_on:
+      - backend
 
 volumes:
   pg_data:

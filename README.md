@@ -25,14 +25,42 @@ line-anchored review feedback — with **zero paid APIs**.
 ```
 backend/    Rails 7.1 API-only application
 frontend/   React 18 + TypeScript + Vite SPA
-docker-compose.yml   PostgreSQL + Redis (data stores)
+docker-compose.yml   Full stack: Postgres, Redis, Rails API, Sidekiq worker, React SPA
 ```
 
-## Development setup
+## Run it — one command via Docker
+
+The entire stack (Postgres, Redis, the Rails API, a Sidekiq worker, and the React
+SPA) runs from `docker-compose.yml`. Two commands total — one to build, one to start:
 
 ```bash
-# 1. Data stores
-docker compose up -d postgres redis    # or: brew services start postgresql@15 redis
+# 1. Build the images (only needed the first time, or after changing code/Gemfile/package.json)
+docker compose build
+
+# 2. Start everything
+docker compose up
+```
+
+That's it:
+- API: http://localhost:3000
+- Frontend: http://localhost:5173
+- Postgres: localhost:5432, Redis: localhost:6379
+
+The backend container runs `db:prepare` + `db:seed` on every start (seeding is
+idempotent), so the database is always ready — no separate migrate step. Seed
+users: `admin@example.com` / `demo@example.com`, password `password1234`.
+
+`backend/.env` already carries the DeepSeek API key, so no local Ollama server
+is needed. To rebuild after a code change: `docker compose up --build`. To stop:
+`docker compose down` (add `-v` to also wipe the Postgres/Redis volumes).
+
+### Manual (non-Docker) setup
+
+Useful for active backend/frontend development with faster reload:
+
+```bash
+# 1. Data stores only
+docker compose up -d postgres redis
 
 # 2. Backend
 cd backend
@@ -41,7 +69,7 @@ cp ../.env.example ../.env             # then fill in secrets (bin/rails secret)
 bin/rails db:create db:migrate db:seed
 bin/rails server -p 3000
 
-# 3. Sidekiq worker  (Increment 2+)
+# 3. Sidekiq worker
 cd backend
 bundle exec sidekiq -C config/sidekiq.yml
 
