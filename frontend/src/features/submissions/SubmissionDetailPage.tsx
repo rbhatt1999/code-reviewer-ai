@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getSubmission, getIssues, getReview, getSubmissionFiles, getFileContent } from '@api/submissions';
@@ -22,22 +22,32 @@ function reviewedPaths(review: Review | undefined): Set<string> {
 }
 
 function ActivityTimeline({ activities, active }: { activities: SubmissionActivity[]; active: boolean }) {
+  const activityFeedRef = useRef<HTMLOListElement>(null);
+
+  useEffect(() => {
+    const activityFeed = activityFeedRef.current;
+    if (activityFeed) activityFeed.scrollTop = activityFeed.scrollHeight;
+  }, [activities.length, active]);
+
   if (activities.length === 0 && !active) return null;
   const currentIndex = active ? activities.length - 1 : -1;
 
   return (
     <div className="app-panel mb-6 overflow-hidden" data-testid="submission-activity">
       <div className="border-b border-zinc-100 px-5 py-4"><p className="app-kicker">Live pipeline</p><h2 className="mt-1 text-base font-semibold text-zinc-950" data-testid={active ? 'submission-in-progress' : undefined}>Review activity</h2></div>
-      <ol className="space-y-2 px-5 py-4">
+      <ol
+        ref={activityFeedRef}
+        className="h-72 space-y-2 overflow-y-auto bg-zinc-950 px-5 py-4 font-mono text-xs sm:h-80"
+      >
         {activities.length === 0 && active && (
-          <li className="flex items-start gap-3 rounded-lg bg-blue-50 px-3 py-2.5 text-sm" data-testid="activity-current">
-            <span className="text-blue-600">●</span>
-            <span className="text-gray-700">Review is starting</span>
+          <li className="flex items-start gap-3 rounded-lg bg-blue-500/15 px-3 py-2.5 text-sm text-blue-100" data-testid="activity-current">
+            <span className="text-blue-400">●</span>
+            <span>Review is starting</span>
           </li>
         )}
         {activities.map((entry, index) => (
-          <li key={entry.created_at} className={`flex items-start gap-3 rounded-lg px-3 py-2 text-sm ${index === currentIndex ? 'bg-blue-50 text-zinc-950' : 'text-zinc-600'}`} data-testid={index === currentIndex ? 'activity-current' : undefined}>
-            <span className={index === currentIndex ? 'text-blue-600' : 'text-emerald-600'}>{index === currentIndex ? '●' : '✓'}</span>
+          <li key={entry.created_at} className={`flex items-start gap-3 rounded-lg px-3 py-2 text-sm ${index === currentIndex ? 'bg-blue-500/15 text-blue-100' : 'text-zinc-400'}`} data-testid={index === currentIndex ? 'activity-current' : undefined}>
+            <span className={index === currentIndex ? 'text-blue-400' : 'text-emerald-400'}>{index === currentIndex ? '●' : '✓'}</span>
             <span>{entry.message}</span>
           </li>
         ))}
