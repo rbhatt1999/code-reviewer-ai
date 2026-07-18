@@ -1,7 +1,13 @@
+import { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getProject, deleteProject } from '@api/projects';
+import { getProject, deleteProject, regenerateWebhookSecret } from '@api/projects';
 import { listSubmissions } from '@api/submissions';
+import type { Project } from '@api/schemas';
+
+// The webhook endpoint is a single shared route — GitHub's payload is matched back
+// to a project by repo_url + HMAC signature, not by a per-project URL segment.
+const WEBHOOK_URL = `${(import.meta.env.VITE_API_BASE_URL as string).replace(/\/$/, '')}/webhooks/github`;
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -26,6 +32,13 @@ export function ProjectDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       navigate('/projects');
+    },
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: () => regenerateWebhookSecret(projectId),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['project', projectId], updated);
     },
   });
 
@@ -93,6 +106,14 @@ export function ProjectDetailPage() {
         )}
       </div>
 
+      {project.repo_url && (
+        <WebhookPanel
+          project={project}
+          onRegenerate={() => regenerateMutation.mutate()}
+          isRegenerating={regenerateMutation.isPending}
+        />
+      )}
+
       <h2 className="text-lg font-semibold text-gray-700 mb-3">Submissions</h2>
 
       {submissionsLoading && (
@@ -138,6 +159,113 @@ export function ProjectDetailPage() {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+interface WebhookPanelProps {
+  project: Project;
+  onRegenerate: () => void;
+  isRegenerating: boolean;
+}
+
+function WebhookPanel({ project, onRegenerate, isRegenerating }: WebhookPanelProps) {
+  const [revealed, setRevealed] = useState(false);
+  const [copied, setCopied] = useState<'url' | 'secret' | null>(null);
+
+  const secret = project.webhook_secret;
+
+  const copy = async (text: string, which: 'url' | 'secret') => {
+    await navigator.clipboard.writeText(text);
+    setCopied(which);
+    setTimeout(() => setCopied(null), 1500);
+  };
+
+  const handleRegenerate = () => {
+    if (
+      !secret ||
+      window.confirm('Regenerating will invalidate the current secret — update it on GitHub too. Continue?')
+    ) {
+      onRegenerate();
+    }
+  };
+
+  return (
+    <div
+      className="bg-white border border-gray-200 rounded-lg p-4 mb-6 text-sm"
+      data-testid="webhook-panel"
+    >
+      <h2 className="text-sm font-semibold text-gray-700 mb-2">GitHub webhook (auto PR review)</h2>
+      <p className="text-gray-500 text-xs mb-3">
+        In your repo, go to Settings &rarr; Webhooks &rarr; Add webhook. Set Content type to{' '}
+        <code className="bg-gray-100 px-1 rounded">application/json</code> and trigger on{' '}
+        <strong>Pull requests</strong> only.
+      </p>
+
+      <div className="mb-3">
+        <label className="block text-xs font-medium text-gray-600 mb-1">Payload URL</label>
+        <div className="flex gap-2">
+          <input
+            readOnly
+            value={WEBHOOK_URL}
+            className="flex-1 border border-gray-300 rounded px-2 py-1 font-mono text-xs bg-gray-50"
+            data-testid="webhook-url-input"
+          />
+          <button
+            type="button"
+            onClick={() => copy(WEBHOOK_URL, 'url')}
+            className="border border-gray-300 rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+            data-testid="webhook-url-copy"
+          >
+            {copied === 'url' ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-3">
+        <label className="block text-xs font-medium text-gray-600 mb-1">Secret</label>
+        {secret ? (
+          <div className="flex gap-2">
+            <input
+              readOnly
+              type={revealed ? 'text' : 'password'}
+              value={secret}
+              className="flex-1 border border-gray-300 rounded px-2 py-1 font-mono text-xs bg-gray-50"
+              data-testid="webhook-secret-input"
+            />
+            <button
+              type="button"
+              onClick={() => setRevealed((r) => !r)}
+              className="border border-gray-300 rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+              data-testid="webhook-secret-reveal"
+            >
+              {revealed ? 'Hide' : 'Show'}
+            </button>
+            <button
+              type="button"
+              onClick={() => copy(secret, 'secret')}
+              className="border border-gray-300 rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+              data-testid="webhook-secret-copy"
+            >
+              {copied === 'secret' ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+        ) : (
+          <p className="text-xs text-amber-600" data-testid="webhook-secret-missing">
+            No secret yet — generate one below before configuring the webhook.
+          </p>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={handleRegenerate}
+        disabled={isRegenerating}
+        className="border border-gray-300 text-gray-700 px-3 py-1.5 rounded text-xs font-medium hover:bg-gray-50 disabled:opacity-50"
+        data-testid="webhook-regenerate"
+      >
+        {isRegenerating ? 'Generating...' : secret ? 'Regenerate secret' : 'Generate secret'}
+      </button>
     </div>
   );
 }

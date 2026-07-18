@@ -35,6 +35,9 @@ Rails.application.routes.draw do
 
       resources :projects do
         resources :submissions, only: %i[index create]
+        member do
+          post :regenerate_webhook_secret
+        end
       end
 
       resources :submissions, only: %i[show] do

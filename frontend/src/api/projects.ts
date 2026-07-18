@@ -42,3 +42,8 @@ export async function updateProject(id: number, params: UpdateProjectParams): Pr
 export async function deleteProject(id: number): Promise<void> {
   await client.delete(`/projects/${id}`);
 }
+
+export async function regenerateWebhookSecret(id: number): Promise<Project> {
+  const response = await client.post(`/projects/${id}/regenerate_webhook_secret`);
+  return ProjectSchema.parse(response.data.project);
+}

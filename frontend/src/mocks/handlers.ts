@@ -12,6 +12,7 @@ const mockProjects = [
     language: 'ruby',
     default_branch: 'main',
     repo_url: null,
+    webhook_secret: null,
     submissions_count: 2,
     created_at: '2024-01-01T00:00:00.000Z',
     updated_at: '2024-01-01T00:00:00.000Z',
@@ -23,6 +24,7 @@ const mockProjects = [
     language: 'python',
     default_branch: 'main',
     repo_url: 'https://github.com/user/repo',
+    webhook_secret: 'mock-webhook-secret-abc123',
     submissions_count: 0,
     created_at: '2024-01-02T00:00:00.000Z',
     updated_at: '2024-01-02T00:00:00.000Z',
@@ -121,6 +123,7 @@ export const handlers = [
       language: String(body.project.language ?? 'ruby'),
       default_branch: String(body.project.default_branch ?? 'main'),
       repo_url: null,
+      webhook_secret: null,
       submissions_count: 0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -136,6 +139,13 @@ export const handlers = [
 
   http.delete(`${BASE}/projects/:id`, () => {
     return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.post(`${BASE}/projects/:id/regenerate_webhook_secret`, ({ params }) => {
+    const project = mockProjects.find((p) => p.id === Number(params.id));
+    if (!project) return new HttpResponse(null, { status: 404 });
+    const updated = { ...project, webhook_secret: 'regenerated-mock-secret-xyz789' };
+    return HttpResponse.json({ project: updated });
   }),
 
   // Submissions

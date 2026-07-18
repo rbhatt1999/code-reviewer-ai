@@ -57,6 +57,13 @@ RSpec.describe 'Api::V1::Projects', type: :request do
       post '/api/v1/projects', params: valid_params, headers: headers, as: :json
       expect(response).to have_http_status(:unprocessable_entity)
     end
+
+    it 'auto-generates a webhook_secret so the GitHub webhook flow is usable immediately' do
+      post '/api/v1/projects', params: valid_params, headers: headers, as: :json
+      body = JSON.parse(response.body)
+      expect(body['project']['webhook_secret']).to be_present
+      expect(body['project']['webhook_secret'].length).to be >= 32
+    end
   end
 
   describe 'GET /api/v1/projects/:id' do
@@ -114,6 +121,40 @@ RSpec.describe 'Api::V1::Projects', type: :request do
       other_project = create(:project)
       delete "/api/v1/projects/#{other_project.id}", headers: headers
       expect(response).to have_http_status(:not_found)
+    end
+  end
+
+  describe 'POST /api/v1/projects/:id/regenerate_webhook_secret' do
+    let!(:project) { create(:project, :with_webhook, user: user) }
+
+    it 'replaces the secret with a new one' do
+      old_secret = project.webhook_secret
+      post "/api/v1/projects/#{project.id}/regenerate_webhook_secret", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      body = JSON.parse(response.body)
+      expect(body['project']['webhook_secret']).to be_present
+      expect(body['project']['webhook_secret']).not_to eq(old_secret)
+      expect(project.reload.webhook_secret).to eq(body['project']['webhook_secret'])
+    end
+
+    it 'backfills a secret for a project created before this field was set' do
+      project.update_column(:webhook_secret, nil) # simulate a pre-existing row
+      post "/api/v1/projects/#{project.id}/regenerate_webhook_secret", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(project.reload.webhook_secret).to be_present
+    end
+
+    it 'returns 404 for another users project' do
+      other_project = create(:project, :with_webhook)
+      post "/api/v1/projects/#{other_project.id}/regenerate_webhook_secret", headers: headers
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it 'returns 401 without token' do
+      post "/api/v1/projects/#{project.id}/regenerate_webhook_secret"
+      expect(response).to have_http_status(:unauthorized)
     end
   end
 end

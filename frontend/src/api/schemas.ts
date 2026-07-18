@@ -15,6 +15,7 @@ export const ProjectSchema = z.object({
   language: z.enum(['ruby', 'python', 'javascript', 'typescript', 'java']),
   default_branch: z.string(),
   repo_url: z.string().nullable(),
+  webhook_secret: z.string().nullable(),
   submissions_count: z.number(),
   created_at: z.string(),
   updated_at: z.string(),
