@@ -17,6 +17,7 @@ module LLM
     MAX_LLM_FILES       = ENV.fetch('LLM_MAX_FILES', 20).to_i        # cap on read_file calls per submission
     MAX_BYTES_PER_FILE  = ENV.fetch('LLM_MAX_BYTES_PER_FILE', 24_000).to_i
     MAX_JSON_ATTEMPTS   = 3                                          # final-answer JSON-parse retries
+    FINAL_MAX_TOKENS    = ENV.fetch('LLM_FINAL_MAX_TOKENS', 8_000).to_i
     MAX_ROUNDS          = MAX_LLM_FILES + MAX_JSON_ATTEMPTS + 4      # hard cap on total round-trips
     SEV_ALLOWED         = %w[info low medium high critical].freeze
     CAT_ALLOWED         = %w[code_quality bug style security refactor].freeze
@@ -103,14 +104,21 @@ module LLM
       files_read  = 0
       degraded    = false
       final_attrs = []
+      finalizing  = false
 
       MAX_ROUNDS.times do
-        offer_tools = files_read < MAX_LLM_FILES
-        message = @client.complete(messages: messages, tools: offer_tools ? LLM::PromptBuilder::TOOLS : nil)
+        finalizing ||= files_read >= MAX_LLM_FILES
+        offer_tools = !finalizing && files_read < MAX_LLM_FILES
+        message = @client.complete(
+          messages: messages,
+          tools: offer_tools ? LLM::PromptBuilder::TOOLS : nil,
+          response_format: finalizing ? { type: 'json_object' } : nil,
+          max_tokens: finalizing ? FINAL_MAX_TOKENS : nil
+        )
 
         tool_calls = message['tool_calls']
         if tool_calls.present?
-          messages << { role: 'assistant', content: message['content'], tool_calls: tool_calls }
+          messages << assistant_message(message, tool_calls: tool_calls)
           tool_calls.each do |tool_call|
             text, files_read = execute_tool_call(tool_call, known_rels, files_read, log)
             messages << { role: 'tool', tool_call_id: tool_call['id'], content: text }
@@ -126,15 +134,18 @@ module LLM
           break
         end
 
+        log << final_answer_error(message, attempt: attempts)
+
         if attempts >= MAX_JSON_ATTEMPTS
           degraded = true
           log << { type: 'degraded', reason: 'invalid_json' }
           break
         end
 
-        messages << { role: 'assistant', content: message['content'].to_s }
+        messages << assistant_message(message)
         messages << { role: 'user',
                       content: 'That was not valid JSON matching the schema. Respond with ONLY the JSON object.' }
+        finalizing = true
       rescue LLM::Errors::TransportError => e
         Rails.logger.warn("[LLM::ReviewService] transport error (non-fatal): #{e.message}")
         attempts += 1
@@ -245,11 +256,32 @@ module LLM
 
     # --- final answer parsing/mapping ---------------------------------------
 
+    def assistant_message(message, tool_calls: nil)
+      { role: 'assistant', content: message['content'], tool_calls: tool_calls,
+        reasoning_content: message['reasoning_content'] }.compact
+    end
+
     def safe_parse(content)
       parsed = JSON.parse(content.to_s)
       parsed.is_a?(Hash) && parsed['issues'].is_a?(Array) ? parsed : nil
     rescue JSON::ParserError
       nil
+    end
+
+    def final_answer_error(message, attempt:)
+      content = message['content'].to_s
+      reason = if content.empty?
+                 'empty_content'
+               else
+                 JSON.parse(content)
+                 'invalid_schema'
+               end
+
+      { type: 'final_answer_error', attempt: attempt, reason: reason, finish_reason: message['_finish_reason'],
+        content: content.empty? ? 'empty' : 'present' }
+    rescue JSON::ParserError
+      { type: 'final_answer_error', attempt: attempt, reason: 'invalid_json', finish_reason: message['_finish_reason'],
+        content: content.empty? ? 'empty' : 'present' }
     end
 
     def map_issues(parsed, known_rels)

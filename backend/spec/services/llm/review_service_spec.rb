@@ -27,11 +27,12 @@ RSpec.describe LLM::ReviewService, type: :service do
   end
 
   # A "the model wants to read a file" DeepSeek response.
-  def tool_call_response(path, call_id: 'call_1')
+  def tool_call_response(path, call_id: 'call_1', reasoning_content: nil)
     {
       choices: [{
         message: {
           content: nil,
+          reasoning_content: reasoning_content,
           tool_calls: [
             { id: call_id, type: 'function', function: { name: 'read_file', arguments: { path: path }.to_json } }
           ]
@@ -133,6 +134,48 @@ RSpec.describe LLM::ReviewService, type: :service do
       end
     end
 
+    context 'model needs a structured final-answer retry after reading a file' do
+      it 'preserves reasoning context and requests JSON mode without tools' do
+        Dir.mktmpdir do |tmpdir|
+          File.write(File.join(tmpdir, 'app.rb'), "def foo\n  nil\nend\n")
+
+          stub_deepseek_sequence(
+            tool_call_response('app.rb', reasoning_content: 'Need to inspect app.rb.'),
+            { choices: [{ message: { content: 'Found one issue.' } }] }.to_json,
+            final_answer([])
+          )
+
+          result = build_service(tmpdir).call
+
+          expect(result.degraded).to be(false)
+          expect(WebMock).to have_requested(:post, chat_url).with { |request|
+            body = JSON.parse(request.body)
+            body['tools'].nil? && body['response_format'] == { 'type' => 'json_object' } &&
+              body['messages'].any? { |message| message['reasoning_content'] == 'Need to inspect app.rb.' }
+          }
+        end
+      end
+    end
+
+    context 'model reaches the file-read limit' do
+      it 'uses JSON mode for the final answer' do
+        stub_const('LLM::ReviewService::MAX_LLM_FILES', 1)
+
+        Dir.mktmpdir do |tmpdir|
+          File.write(File.join(tmpdir, 'app.rb'), "def foo\n  nil\nend\n")
+          stub_deepseek_sequence(tool_call_response('app.rb'), final_answer([]))
+
+          result = build_service(tmpdir).call
+
+          expect(result.degraded).to be(false)
+          expect(WebMock).to have_requested(:post, chat_url).with { |request|
+            body = JSON.parse(request.body)
+            body['tools'].nil? && body['response_format'] == { 'type' => 'json_object' }
+          }
+        end
+      end
+    end
+
     context 'model requests a file over MAX_BYTES_PER_FILE via read_file' do
       it 'returns an error to the model instead of the content, and produces no issue for it' do
         Dir.mktmpdir do |tmpdir|
@@ -197,7 +240,7 @@ RSpec.describe LLM::ReviewService, type: :service do
           File.write(File.join(tmpdir, 'app.rb'), "def foo; end\n")
 
           stub_request(:post, chat_url)
-            .to_return(status: 200, body: { choices: [{ message: { content: 'not json' } }] }.to_json,
+            .to_return(status: 200, body: { choices: [{ finish_reason: 'length', message: { content: 'not json' } }] }.to_json,
                        headers: { 'Content-Type' => 'application/json' })
 
           result = build_service(tmpdir).call
@@ -205,7 +248,31 @@ RSpec.describe LLM::ReviewService, type: :service do
           expect(result.issues_attrs).to eq([])
           expect(result.attempts).to eq(3)
           expect(result.degraded).to be(true)
-          expect(result.review_log).to eq([{ type: 'degraded', reason: 'invalid_json' }])
+          expect(result.review_log).to eq([
+            { type: 'final_answer_error', attempt: 1, reason: 'invalid_json', finish_reason: 'length', content: 'present' },
+            { type: 'final_answer_error', attempt: 2, reason: 'invalid_json', finish_reason: 'length', content: 'present' },
+            { type: 'final_answer_error', attempt: 3, reason: 'invalid_json', finish_reason: 'length', content: 'present' },
+            { type: 'degraded', reason: 'invalid_json' }
+          ])
+        end
+      end
+    end
+
+    context 'final JSON has the wrong schema on every attempt' do
+      it 'records schema failures without storing model content' do
+        Dir.mktmpdir do |tmpdir|
+          File.write(File.join(tmpdir, 'app.rb'), "def foo; end\n")
+
+          stub_request(:post, chat_url)
+            .to_return(status: 200, body: { choices: [{ message: { content: '{}' } }] }.to_json,
+                       headers: { 'Content-Type' => 'application/json' })
+
+          result = build_service(tmpdir).call
+
+          expect(result.degraded).to be(true)
+          expect(result.review_log).to include(
+            { type: 'final_answer_error', attempt: 1, reason: 'invalid_schema', finish_reason: nil, content: 'present' }
+          )
         end
       end
     end

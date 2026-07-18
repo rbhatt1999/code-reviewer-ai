@@ -15,11 +15,13 @@ module LLM
     # rather than just the content string, so callers can drive an agentic
     # tool-calling loop (needed by LLM::ReviewService's read_file flow).
     # Raises Llm::Errors::TransportError on transport failure or missing key.
-    def complete(messages:, tools: nil)
+    def complete(messages:, tools: nil, response_format: nil, max_tokens: nil)
       raise Errors::TransportError, 'DEEPSEEK_API_KEY is not set' if @api_key.blank?
 
       body = { model: @model, temperature: 0.1, messages: messages }
       body[:tools] = tools if tools.present?
+      body[:response_format] = response_format if response_format.present?
+      body[:max_tokens] = max_tokens if max_tokens.present?
 
       resp = connection.post('/chat/completions') do |req|
         req.headers['Content-Type']  = 'application/json'
@@ -28,7 +30,8 @@ module LLM
       end
       raise Errors::TransportError, "deepseek #{resp.status}" unless resp.success?
 
-      JSON.parse(resp.body).dig('choices', 0, 'message') || {}
+      choice = JSON.parse(resp.body).dig('choices', 0) || {}
+      (choice['message'] || {}).merge('_finish_reason' => choice['finish_reason'])
     rescue Faraday::Error => e
       raise Errors::TransportError, e.message
     end
