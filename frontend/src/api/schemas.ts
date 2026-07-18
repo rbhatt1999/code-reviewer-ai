@@ -46,7 +46,13 @@ export const IssueSchema = z.object({
   line_end: z.number(),
   message: z.string(),
   suggestion: z.string().nullable(),
-  confidence: z.number().nullable(),
+  // Rails serialises the `confidence` decimal column as a JSON string (e.g. "0.85"),
+  // not a number — BigDecimal#as_json always renders as a quoted string to avoid
+  // floating-point precision loss. Accept either shape and normalise to a number.
+  confidence: z
+    .union([z.number(), z.string()])
+    .nullable()
+    .transform((v) => (v === null ? null : Number(v))),
 });
 export type Issue = z.infer<typeof IssueSchema>;
 

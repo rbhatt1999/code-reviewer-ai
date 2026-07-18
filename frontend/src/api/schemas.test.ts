@@ -104,6 +104,22 @@ describe('IssueSchema', () => {
       IssueSchema.parse({ ...validIssue, severity: 'fatal' })
     ).toThrow(ZodError);
   });
+
+  it('parses a string confidence (real Rails output — BigDecimal serialises as a quoted string)', () => {
+    const result = IssueSchema.parse({ ...validIssue, confidence: '0.85' });
+    expect(result.confidence).toBe(0.85);
+    expect(typeof result.confidence).toBe('number');
+  });
+
+  it('parses a numeric confidence unchanged', () => {
+    const result = IssueSchema.parse({ ...validIssue, confidence: 0.9 });
+    expect(result.confidence).toBe(0.9);
+  });
+
+  it('keeps a null confidence as null', () => {
+    const result = IssueSchema.parse({ ...validIssue, confidence: null });
+    expect(result.confidence).toBeNull();
+  });
 });
 
 describe('ReviewSchema', () => {
