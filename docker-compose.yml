@@ -88,6 +88,23 @@ services:
     depends_on:
       - backend
 
+  # Opt-in tunnel that gives the backend a public HTTPS URL so GitHub's
+  # servers can reach the webhook endpoint on your laptop. Not started by a
+  # plain `docker compose up` — requires a free ngrok account (see README).
+  # Run with: docker compose --profile demo up
+  ngrok:
+    image: ngrok/ngrok:latest
+    profiles: ["demo"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?set NGROK_AUTHTOKEN in your shell or .env — see README}
+    command: http backend:3000 --log=stdout
+    ports:
+      # Local web inspector — shows the current public URL and lets you
+      # replay/debug incoming webhook deliveries at http://localhost:4040
+      - "4040:4040"
+    depends_on:
+      - backend
+
 volumes:
   pg_data:
   redis_data:

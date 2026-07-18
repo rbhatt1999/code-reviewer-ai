@@ -7,7 +7,15 @@ import type { Project } from '@api/schemas';
 
 // The webhook endpoint is a single shared route — GitHub's payload is matched back
 // to a project by repo_url + HMAC signature, not by a per-project URL segment.
-const WEBHOOK_URL = `${(import.meta.env.VITE_API_BASE_URL as string).replace(/\/$/, '')}/webhooks/github`;
+const WEBHOOK_PATH = '/api/v1/webhooks/github';
+
+// VITE_API_BASE_URL is host-oriented (e.g. http://localhost:3000/api/v1) and
+// is NOT reachable from GitHub's servers — it only resolves on this machine.
+// Strip the /api/v1 suffix to get a plain origin the user can swap for a
+// public tunnel URL (ngrok, Cloudflare Tunnel, etc.) during a live demo.
+const DEFAULT_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string)
+  .replace(/\/api\/v1\/?$/, '')
+  .replace(/\/$/, '');
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -172,8 +180,11 @@ interface WebhookPanelProps {
 function WebhookPanel({ project, onRegenerate, isRegenerating }: WebhookPanelProps) {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState<'url' | 'secret' | null>(null);
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URL);
 
   const secret = project.webhook_secret;
+  const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(baseUrl);
+  const payloadUrl = `${baseUrl.replace(/\/$/, '')}${WEBHOOK_PATH}`;
 
   const copy = async (text: string, which: 'url' | 'secret') => {
     await navigator.clipboard.writeText(text);
@@ -203,17 +214,37 @@ function WebhookPanel({ project, onRegenerate, isRegenerating }: WebhookPanelPro
       </p>
 
       <div className="mb-3">
+        <label className="block text-xs font-medium text-gray-600 mb-1">
+          Public base URL
+        </label>
+        <input
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          placeholder="https://abcd1234.ngrok-free.app"
+          className="w-full border border-gray-300 rounded px-2 py-1 font-mono text-xs"
+          data-testid="webhook-base-url-input"
+        />
+        {isLocalhost && (
+          <p className="text-xs text-amber-600 mt-1" data-testid="webhook-localhost-warning">
+            GitHub's servers can't reach localhost. Run a tunnel (e.g.{' '}
+            <code className="bg-gray-100 px-1 rounded">docker compose --profile demo up</code>{' '}
+            for the bundled ngrok service) and paste the public URL here — see the README.
+          </p>
+        )}
+      </div>
+
+      <div className="mb-3">
         <label className="block text-xs font-medium text-gray-600 mb-1">Payload URL</label>
         <div className="flex gap-2">
           <input
             readOnly
-            value={WEBHOOK_URL}
+            value={payloadUrl}
             className="flex-1 border border-gray-300 rounded px-2 py-1 font-mono text-xs bg-gray-50"
             data-testid="webhook-url-input"
           />
           <button
             type="button"
-            onClick={() => copy(WEBHOOK_URL, 'url')}
+            onClick={() => copy(payloadUrl, 'url')}
             className="border border-gray-300 rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
             data-testid="webhook-url-copy"
           >

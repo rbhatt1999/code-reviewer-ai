@@ -54,6 +54,35 @@ users: `admin@example.com` / `demo@example.com`, password `password1234`.
 is needed. To rebuild after a code change: `docker compose up --build`. To stop:
 `docker compose down` (add `-v` to also wipe the Postgres/Redis volumes).
 
+### Exposing the webhook publicly for a demo (ngrok)
+
+GitHub's servers can't reach `http://localhost:3000` — it only exists on your
+machine. To let a real GitHub webhook hit your local backend during a demo,
+tunnel it through ngrok:
+
+```bash
+# 1. Free account → https://dashboard.ngrok.com/signup, then grab your
+#    authtoken from https://dashboard.ngrok.com/get-started/your-authtoken
+export NGROK_AUTHTOKEN=<your token>          # or add it to backend/.env
+
+# 2. Start the stack + the tunnel (the "demo" profile is opt-in, see below)
+docker compose --profile demo up
+```
+
+Once it's up, open **http://localhost:4040** — ngrok's local inspector shows
+your current public URL (something like `https://a1b2c3d4.ngrok-free.app`)
+and lets you replay/debug each incoming webhook delivery.
+
+In the project's webhook panel (`/projects/:id` in the app), use that ngrok
+URL instead of the localhost one when you configure the webhook in GitHub —
+`https://a1b2c3d4.ngrok-free.app/api/v1/webhooks/github`, content type
+`application/json`, event: **Pull requests** only. Copy the secret shown in
+the same panel into GitHub's "Secret" field.
+
+Free-tier ngrok URLs change every time you restart the tunnel, so re-check
+http://localhost:4040 and update the GitHub webhook's Payload URL if you
+stop and restart between demo runs.
+
 ### Manual (non-Docker) setup
 
 Useful for active backend/frontend development with faster reload:

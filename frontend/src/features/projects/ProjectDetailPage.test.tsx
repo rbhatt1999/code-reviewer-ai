@@ -70,6 +70,29 @@ describe('ProjectDetailPage — webhook panel', () => {
     expect(screen.getByTestId('webhook-regenerate')).toHaveTextContent('Generate secret');
   });
 
+  it('warns that localhost is unreachable and updates the payload URL when a public base URL is pasted in', async () => {
+    mockedGetProject.mockResolvedValue({
+      ...baseProject,
+      repo_url: 'https://github.com/acme/widget',
+      webhook_secret: 'shh-secret-value',
+    });
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('webhook-base-url-input')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('webhook-localhost-warning')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId('webhook-base-url-input'), {
+      target: { value: 'https://abcd1234.ngrok-free.app' },
+    });
+
+    expect(screen.queryByTestId('webhook-localhost-warning')).not.toBeInTheDocument();
+    expect(screen.getByTestId('webhook-url-input')).toHaveValue(
+      'https://abcd1234.ngrok-free.app/api/v1/webhooks/github'
+    );
+  });
+
   it('masks the secret by default and reveals it on click', async () => {
     mockedGetProject.mockResolvedValue({
       ...baseProject,
